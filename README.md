@@ -14,9 +14,28 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-3D6BFF)]()
+[![Version](https://img.shields.io/badge/version-1.0.0-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
 
 </div>
+
+---
+
+## 目录
+
+- [这是什么](#这是什么)
+- [它能做什么](#它能做什么)
+- [它是怎么干活的](#它是怎么干活的)
+- [灵动岛：实时显示它的想法](#灵动岛实时显示它的想法)
+- [支持的动作](#支持的动作)
+- [下载安装](#下载安装)
+- [快速开始](#快速开始)
+- [支持的模型](#支持的模型)
+- [常见问题解决](#常见问题解决)
+- [隐私与安全](#隐私与安全)
+- [技术栈](#技术栈)
+- [项目结构](#项目结构)
+- [注意事项](#注意事项)
+- [许可证](#许可证)
 
 ---
 
@@ -96,22 +115,38 @@ flowchart LR
 
 ---
 
+## 下载安装
+
+**方式一 · 直接装 APK**（只想用的同学看这里）
+
+到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `app-debug.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
+
+**方式二 · 从源码自己编译**（见下方「快速开始」）
+
+---
+
 ## 快速开始
 
 ### 环境要求
 
-- Android **13 (API 33)** 及以上
-- 编译需要 **JDK 17**（AGP 8.13 + Kotlin 2.x）
+- 手机：Android **13 (API 33)** 及以上（灵动岛实况通知需要 **Android 16**）
+- 编译：**JDK 17**（AGP 8.13 + Kotlin 2.x；用 JDK 21/25 会直接报错）
+- Android SDK：需要 `compileSdk 36`，并在 `local.properties` 里写好 `sdk.dir`
 - 一个可用的视觉模型 API Key
 
 ### 编译
+
+仓库里已经带了 **Gradle Wrapper**，不用另外装 Gradle：
 
 ```bash
 git clone https://github.com/XIAWAN-PROMAX/Orion.git
 cd Orion
 
-# 沙箱 / CI 里默认 JDK 可能过新，显式指定 17
-./gradlew assembleDebug -Dorg.gradle.java.home=$JAVA_HOME_17
+# 让 Gradle 用 JDK 17（路径换成你自己的）
+./gradlew assembleDebug -Dorg.gradle.java.home=/path/to/jdk-17
+
+# Windows 用：
+# gradlew.bat assembleDebug -Dorg.gradle.java.home=C:\path\to\jdk-17
 ```
 
 产物：`app/build/outputs/apk/debug/app-debug.apk`
@@ -162,6 +197,24 @@ cd Orion
 
 ## 项目结构
 
+仓库整体布局：
+
+```text
+Orion/
+├── app/                        # 主 App 模块（Orion 本体）
+├── backdrop/                   # Liquid Glass 组件库（Apache-2.0，见 backdrop/LICENSE.txt）
+├── assets/                     # README 里的动图与图标
+├── gradle/wrapper/             # Gradle Wrapper（已内置，无需另装 Gradle）
+├── build.gradle.kts            # 插件与版本
+├── settings.gradle.kts         # 模块声明
+├── gradle.properties           # 构建参数
+├── local.properties            # 本机 SDK 路径（不上传，需自己建）
+├── .gitignore
+└── LICENSE                     # GPL-3.0
+```
+
+`app` 模块的包结构：
+
 ```text
 com.orion.assistant
 ├── engine/                 # 中枢：把「看 → 想 → 做」串起来
@@ -177,6 +230,66 @@ com.orion.assistant
 ├── data/                   # 设置与历史（加密存储）
 └── ui/                     # Compose 界面（首页 / 设置 / 历史 / 引导）
 ```
+
+---
+
+## 常见问题解决
+
+**1. 提示「还没开启无障碍服务」**
+
+去 *系统设置 → 无障碍（辅助功能）→ 已安装的服务*，找到 **Orion** 打开。小米 / 华为 / OPPO 等 ROM 可能还要额外允许「受限设置」，或对该 App 关闭电池优化，否则服务会被系统杀掉。
+
+**2. 提示「还没授权截屏」**
+
+截屏走 MediaProjection，手机重启或长时间后台后授权会失效。重新打开 App，按引导再授权一次即可。
+
+**3. 灵动岛（实况通知）不显示**
+
+实况通知依赖 **Android 16 的 Live Updates**，更低版本会自动降级成普通通知。另外请确认已授予通知权限，并且没有把 Orion 的通知设为静默。
+
+**4. 模型报 401 / 403 / 404**
+
+基本都是 API Key 或 Base URL 填错。到「设置」核对：
+
+- 豆包视觉：`https://ark.cn-beijing.volces.com/api/v3`
+- 通义千问：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+
+改完点「测试连接」。豆包还需要先在控制台开通对应模型的接入点。
+
+**5. 它看不懂屏幕 / 点错位置**
+
+换更强的视觉模型（`qwen-vl-max-latest`、豆包 vision pro），或在「设置 → 自定义提示词」里加约束，例如「点击前先确认按钮上的文字」。
+
+**6. 在某个 App 里打不进字**
+
+先在输入框上点一下让它获得焦点，再让 Orion 输入。Orion 会扫描所有窗口的输入框（含弹窗、底部输入条），写入失败时自动改用「剪贴板 + 粘贴」。
+
+**7. 点了「停止」没立刻停**
+
+当前版本点停止会立即取消正在进行的模型调用与等待，界面先显示「正在停止…」，随后落到「已停止」。如果仍然迟钝，请更新到最新版本。
+
+**8. 编译报 `Unsupported class file major version` 或 AGP 不兼容**
+
+JDK 版本太新。改用 **JDK 17**，并显式指定：
+
+```bash
+./gradlew assembleDebug -Dorg.gradle.java.home=/path/to/jdk-17
+```
+
+**9. 编译卡在下载依赖（国内网络）**
+
+在项目根目录的 `gradle.properties` 里加代理：
+
+```properties
+systemProp.https.proxyHost=127.0.0.1
+systemProp.https.proxyPort=7890
+```
+
+或者把 `settings.gradle.kts` 里的仓库换成国内镜像（如阿里云 `https://maven.aliyun.com/repository/google`）。
+
+**10. 它会不会自己乱点？**
+
+只在你说「开始」后才动手，任何时候都能暂停 / 停止；碰到付款、下单、发送消息这类不可逆操作会先停下来问你。初次使用建议从可逆的简单任务（打开 App、搜索、翻页）开始。
 
 ---
 
