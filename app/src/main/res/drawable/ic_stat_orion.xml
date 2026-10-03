@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!--
+      状态栏 / 通知小图标：只取 Orion 腰带三星的剪影。
+      小图标必须是单色（系统只认 alpha），所以这里全部用白色实心绘制。
+    -->
+    <path
+        android:pathData="M7,15 L12,12.5 L17,10"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,15 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,12.5 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M17,10 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
+    <!-- 右下角小星芒，呼应桌面图标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19,15.6 L19.75,17.35 L21.5,18.1 L19.75,18.85 L19,20.6 L18.25,18.85 L16.5,18.1 L18.25,17.35 Z" />
+</vector>

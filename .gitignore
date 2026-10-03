@@ -1,35 +1,21 @@
-# Gradle files
+# Gradle 构建产物
 .gradle/
 build/
 .kotlin/
 
-# Local configuration file (sdk path, etc)
+# 保留 Gradle Wrapper 的 jar，其余 wrapper 文件都要提交
+!gradle/wrapper/gradle-wrapper.jar
+
+# 本机配置：含 Android SDK 路径，随机器而变，不要提交
 local.properties
 
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
+# IDE
+.idea/
+*.iml
 captures/
 .externalNativeBuild/
 .cxx/
-*.aab
-*.apk
-output-metadata.json
 
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
+# 系统
+.DS_Store
+Thumbs.db

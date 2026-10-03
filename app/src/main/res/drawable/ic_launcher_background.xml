@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- 与 App 内部背景同一套柔和渐变：淡蓝 → 淡粉 -->
+    <gradient
+        android:angle="315"
+        android:startColor="#E9F0FF"
+        android:centerColor="#F2F4FF"
+        android:endColor="#FBEAF4"
+        android:type="linear" />
+</shape>

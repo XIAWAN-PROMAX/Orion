@@ -1,0 +1,424 @@
+package com.orion.assistant.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.Backdrop
+import com.orion.assistant.data.ModelProvider
+import com.orion.assistant.data.OperationSpeed
+import com.orion.assistant.engine.VisionClient
+import com.orion.assistant.orionApp
+import com.orion.assistant.ui.components.GlassCard
+import com.orion.assistant.ui.components.GlassSegmented
+import com.orion.assistant.ui.components.GlassTextField
+import com.orion.assistant.ui.components.OrionToggle
+import com.orion.assistant.ui.components.OrionTopBar
+import com.orion.assistant.ui.components.SectionTitle
+import com.orion.assistant.ui.components.StatusPill
+import com.orion.assistant.ui.theme.OrionColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * 设置页：模型与 Key、操作节奏、存储、关于。
+ * API Key 每次修改都即时写入 EncryptedSharedPreferences（AES256，密钥在 Android Keystore）。
+ */
+@Composable
+fun SettingsScreen(
+    backdrop: Backdrop,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val app = context.orionApp
+    val scope = rememberCoroutineScope()
+
+    var provider by remember { mutableStateOf(app.settings.provider) }
+    var apiKey by remember { mutableStateOf(app.settings.apiKey) }
+    var model by remember { mutableStateOf(app.settings.model) }
+    var baseUrl by remember { mutableStateOf(app.settings.customBaseUrl) }
+    var speed by remember { mutableStateOf(app.settings.speed) }
+    var maxSteps by remember { mutableFloatStateOf(app.settings.maxSteps.toFloat()) }
+    var saveScreenshots by remember { mutableStateOf(app.settings.saveScreenshots) }
+    var customPrompt by remember { mutableStateOf(app.settings.customPrompt) }
+
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars)
+            .padding(horizontal = 20.dp)
+    ) {
+        Spacer(Modifier.height(12.dp))
+        OrionTopBar(
+            title = "设置",
+            subtitle = "模型、节奏与数据",
+            backdrop = backdrop,
+            onBack = onBack
+        )
+
+        Spacer(Modifier.height(18.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // ------------------------------------------------------ 模型服务
+            SectionTitle("模型服务")
+
+            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "选择供应商",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.TextPrimary
+                )
+                Spacer(Modifier.height(11.dp))
+                GlassSegmented(
+                    options = ModelProvider.entries.toList(),
+                    selected = provider,
+                    onSelect = { picked ->
+                        provider = picked
+                        app.settings.provider = picked
+                        // 换供应商后，模型名回落到新供应商的推荐值
+                        app.settings.model = ""
+                        model = app.settings.model
+                        testResult = null
+                    },
+                    label = { it.shortLabel },
+                    backdrop = backdrop
+                )
+
+                Spacer(Modifier.height(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = OrionColors.Accent,
+                        modifier = Modifier.width(18.dp).height(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "API Key",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OrionColors.TextPrimary
+                    )
+                    Spacer(Modifier.weight(1f))
+                    StatusPill(
+                        text = if (app.settings.isEncryptionAvailable) "已加密保存" else "未加密",
+                        color = if (app.settings.isEncryptionAvailable) OrionColors.Success
+                        else OrionColors.Warning
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                GlassTextField(
+                    value = apiKey,
+                    onValueChange = {
+                        apiKey = it
+                        app.settings.apiKey = it
+                        testResult = null
+                    },
+                    backdrop = backdrop,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = provider.keyHint,
+                    minHeight = 56.dp,
+                    singleLine = true,
+                    masked = true
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "模型名 / 推理接入点",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.TextPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = provider.modelHint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextTertiary
+                )
+                Spacer(Modifier.height(10.dp))
+                GlassTextField(
+                    value = model,
+                    onValueChange = {
+                        model = it
+                        app.settings.model = it
+                        testResult = null
+                    },
+                    backdrop = backdrop,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = provider.defaultModel,
+                    minHeight = 56.dp,
+                    singleLine = true
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "自定义接口地址（可选）",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.TextPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "留空则用 ${provider.baseUrl}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextTertiary
+                )
+                Spacer(Modifier.height(10.dp))
+                GlassTextField(
+                    value = baseUrl,
+                    onValueChange = {
+                        baseUrl = it
+                        app.settings.customBaseUrl = it
+                        testResult = null
+                    },
+                    backdrop = backdrop,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "https://…/v1",
+                    minHeight = 56.dp,
+                    singleLine = true
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 测试连接
+                    com.orion.assistant.ui.components.GlassButton(
+                        text = if (testing) "测试中…" else "测试连接",
+                        backdrop = backdrop,
+                        leading = Icons.Filled.Refresh,
+                        enabled = !testing && apiKey.isNotBlank(),
+                        onClick = {
+                            testing = true
+                            testResult = null
+                            scope.launch {
+                                val result = VisionClient(app.settings).testConnection()
+                                withContext(Dispatchers.Main) {
+                                    testResult = result
+                                    testing = false
+                                }
+                            }
+                        }
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    testResult?.let {
+                        val ok = it.contains("成功")
+                        StatusPill(
+                            text = if (ok) "连接正常" else "连接失败",
+                            color = if (ok) OrionColors.Success else OrionColors.Danger
+                        )
+                    }
+                }
+                testResult?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (it.contains("成功")) OrionColors.Success else OrionColors.Danger
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ------------------------------------------------------ 操作节奏
+            SectionTitle("操作节奏")
+
+            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "每步之间的间隔",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.TextPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = speed.hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextTertiary
+                )
+                Spacer(Modifier.height(11.dp))
+                GlassSegmented(
+                    options = OperationSpeed.entries.toList(),
+                    selected = speed,
+                    onSelect = {
+                        speed = it
+                        app.settings.speed = it
+                    },
+                    label = { it.label },
+                    backdrop = backdrop
+                )
+
+                Spacer(Modifier.height(20.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "单次任务最多步数",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OrionColors.TextPrimary
+                    )
+                    Text(
+                        text = maxSteps.toInt().toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OrionColors.Accent,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Slider(
+                    value = maxSteps,
+                    onValueChange = {
+                        maxSteps = it
+                        app.settings.maxSteps = it.toInt()
+                    },
+                    valueRange = 5f..60f,
+                    steps = 54,
+                    colors = SliderDefaults.colors(
+                        thumbColor = OrionColors.Accent,
+                        activeTrackColor = OrionColors.Accent,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.6f)
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ------------------------------------------------------ 智能体提示词
+            SectionTitle("智能体行为")
+
+            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "自定义提示词（可选）",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.TextPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "会追加在系统提示词后面，用来规定 Orion 的做事习惯；与内置规则冲突时以你写的为准。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextTertiary
+                )
+                Spacer(Modifier.height(10.dp))
+                GlassTextField(
+                    value = customPrompt,
+                    onValueChange = {
+                        customPrompt = it
+                        app.settings.customPrompt = it
+                    },
+                    backdrop = backdrop,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "例如：涉及付款的操作，一律先停下来问我",
+                    minHeight = 96.dp
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ------------------------------------------------------ 数据
+            SectionTitle("数据与隐私")
+
+            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "保存每一步的截图",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = OrionColors.TextPrimary
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "开启后会占用较多存储，仅存本机",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OrionColors.TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    OrionToggle(
+                        checked = saveScreenshots,
+                        onCheckedChange = {
+                            saveScreenshots = it
+                            app.settings.saveScreenshots = it
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "清空任务历史",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = OrionColors.TextPrimary
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "删除本地数据库里的全部任务与步骤",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OrionColors.TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    com.orion.assistant.ui.components.GlassButton(
+                        text = "清空",
+                        backdrop = backdrop,
+                        leading = Icons.Filled.Delete,
+                        onClick = {
+                            scope.launch(Dispatchers.IO) { runCatching { app.tasks.clearAll() } }
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ------------------------------------------------------ 关于
+            SectionTitle("关于")
+
+            GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "xiawan开发\n" +
+                        "orionV1.0.0\n" +
+                        "本项目基于 GNU General Public License v3.0 发布，不可商用。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextSecondary
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
+        }
+    }
+}

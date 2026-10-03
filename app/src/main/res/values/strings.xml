@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Orion</string>
+
+    <string name="accessibility_label">Orion 操作助手</string>
+    <string name="accessibility_summary">允许 Orion 读取屏幕内容并模拟点击、滑动、输入</string>
+    <string name="accessibility_description">开启后 Orion 才能代替你点击屏幕、输入文字、滑动页面。Orion 只在你点击「开始」后操作手机，可随时停止。</string>
+
+    <string name="notif_channel_name">任务进度</string>
+    <string name="notif_channel_desc">显示 Orion 当前正在执行的步骤与结果</string>
+</resources>
