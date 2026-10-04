@@ -195,7 +195,33 @@ class VisionClient(private val settings: SettingsRepository) {
         val end = text.lastIndexOf('}')
         if (start < 0 || end <= start) return null
         val candidate = text.substring(start, end + 1)
-        return runCatching { JSONObject(candidate) }.getOrNull()
+        // 先按原样解析；不行再修掉模型常见手误后重试
+        runCatching { JSONObject(candidate) }.getOrNull()?.let { return it }
+        return runCatching { JSONObject(repairJson(candidate)) }.getOrNull()
+    }
+
+    /**
+     * 修掉模型手写 JSON 时的常见错误。目前处理两类：
+     *  1. 坐标丢了键名：`"x": 150, 140` —— 模型把 y 的值直接跟在 x 后面忘了写 `"y":`。
+     *     按 x→y、x1→y1、x2→y2 补回键名。（实际踩到过这个）
+     *  2. 末尾多逗号：`{"a": 1,}` / `[1, 2,]` —— 去掉紧挨 `}` `]` 前的逗号。
+     * 修不好就原样返回，交给调用方按解析失败处理。
+     */
+    private fun repairJson(source: String): String {
+        var text = source
+
+        // 1. 补回丢失的 y / y1 / y2 键名（x1、x2 先处理，避免被 x 的规则误伤）
+        for ((xKey, yKey) in listOf("x1" to "y1", "x2" to "y2", "x" to "y")) {
+            val pattern = Regex(""""$xKey"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)""")
+            text = pattern.replace(text) { m ->
+                """"$xKey": ${m.groupValues[1]}, "$yKey": ${m.groupValues[2]}"""
+            }
+        }
+
+        // 2. 去掉 } 和 ] 前多余的逗号
+        text = text.replace(Regex(""",\s*([}\]])""")) { it.groupValues[1] }
+
+        return text
     }
 
     // ------------------------------------------------------------------ 工具
