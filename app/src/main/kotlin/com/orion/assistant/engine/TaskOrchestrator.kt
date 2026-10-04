@@ -237,7 +237,8 @@ object TaskOrchestrator {
                 }
                 updatePreview(screen)
 
-                val screenText = OrionAccessibilityService.current?.screenTextSnippet().orEmpty()
+                // 界面文字只截一小段：太长会拖慢模型，而且容易分散它的注意力
+                val screenText = OrionAccessibilityService.current?.screenTextSnippet(25).orEmpty()
                 val outcome = vision.plan(
                     instruction = text,
                     screenshot = screen,
