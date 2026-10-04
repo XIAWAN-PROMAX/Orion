@@ -112,14 +112,50 @@ class OrionAccessibilityService : AccessibilityService() {
     fun longPress(x: Float, y: Float, durationMs: Long = 700L): Boolean = stroke(
         start = x to y,
         end = (x + 1f) to (y + 1f),
-        durationMs = durationMs.coerceIn(300L, 3000L)
+        durationMs = durationMs.coerceIn(300L, 15000L)
     )
 
     fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 320L): Boolean = stroke(
         start = x1 to y1,
         end = x2 to y2,
-        durationMs = durationMs.coerceIn(80L, 3000L)
+        durationMs = durationMs.coerceIn(80L, 15000L)
     )
+
+    /**
+     * 按住拖动：先从起点快速划到终点，然后**手指停在终点不抬起**，持续 holdMs。
+     *
+     * 这是操作虚拟摇杆 / 持续移动的关键——普通 swipe 划完立刻抬手，摇杆只会「点一下」；
+     * 必须让手指停在偏移点上，游戏才会认为你一直在推杆，人物才会持续移动。
+     *
+     * 用两段「续接笔画」实现：第一段快速移动并声明 willContinue，第二段从同一个点继续按住。
+     */
+    fun dragHold(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        moveMs: Long = 120L,
+        holdMs: Long = 1500L
+    ): Boolean {
+        val move = GestureDescription.StrokeDescription(
+            Path().apply { moveTo(x1, y1); lineTo(x2, y2) },
+            0L,
+            moveMs.coerceIn(30L, 1000L),
+            true
+        )
+        // 续接笔画：停在终点原地不动，实现「按住不放」
+        val hold = move.continueStroke(
+            Path().apply { moveTo(x2, y2); lineTo(x2 + 1f, y2 + 1f) },
+            move.duration,
+            holdMs.coerceIn(100L, 15000L),
+            false
+        )
+        val gesture = GestureDescription.Builder()
+            .addStroke(move)
+            .addStroke(hold)
+            .build()
+        return runCatching { dispatchGesture(gesture, null, null) }.getOrDefault(false)
+    }
 
     /** 页面滚动：direction 为 up/down/left/right，理解为「内容往哪个方向滚」。 */
     fun scroll(direction: String): Boolean {

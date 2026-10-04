@@ -29,10 +29,18 @@ sealed interface AgentAction {
         val y1: Int,
         val x2: Int,
         val y2: Int,
-        val durationMs: Int
+        val durationMs: Int,
+        /**
+         * 到达终点后再「按住不放」的时长。虚拟摇杆 / 持续移动这类操作，
+         * 需要手指停在偏移点上不松开，人物才会一直走，所以单独给一个按住时长。
+         * 0 表示普通滑动（划完立刻抬起）。
+         */
+        val holdMs: Int = 0
     ) : AgentAction {
         override val key = "swipe"
-        override fun describe() = "滑动 (${x1}, ${y1}) → (${x2}, ${y2})"
+        override fun describe() =
+            if (holdMs > 0) "按住拖动 (${x1}, ${y1}) → (${x2}, ${y2})，并按住 ${holdMs}ms"
+            else "滑动 (${x1}, ${y1}) → (${x2}, ${y2})"
     }
 
     /** 内容滚动方向：up / down / left / right */
@@ -92,18 +100,20 @@ sealed interface AgentAction {
             val type = json.optString("type").trim().lowercase()
             return when (type) {
                 "tap", "click" -> Tap(coord(json, "x"), coord(json, "y"))
-                "long_press", "longpress" -> LongPress(
+                "long_press", "longpress", "hold", "press" -> LongPress(
                     coord(json, "x"),
                     coord(json, "y"),
-                    json.optInt("durationMs", json.optInt("duration", 700)).coerceIn(300, 3000)
+                    json.optInt("durationMs", json.optInt("duration", 900)).coerceIn(300, 15000)
                 )
 
-                "swipe", "drag" -> Swipe(
+                "swipe", "drag", "drag_hold", "joystick" -> Swipe(
                     coord(json, "x1", "x"),
                     coord(json, "y1", "y"),
                     coord(json, "x2"),
                     coord(json, "y2"),
-                    json.optInt("durationMs", json.optInt("duration", 320)).coerceIn(80, 3000)
+                    json.optInt("durationMs", json.optInt("duration", 300)).coerceIn(80, 15000),
+                    json.optInt("holdMs", json.optInt("hold", json.optInt("holdDuration", 0)))
+                        .coerceIn(0, 15000)
                 )
 
                 "scroll" -> Scroll(

@@ -32,14 +32,17 @@ object ActionExecutor {
             }
 
             is AgentAction.Swipe -> {
-                val ok = service.swipe(
-                    action.x1.toPx(width),
-                    action.y1.toPx(height),
-                    action.x2.toPx(width),
-                    action.y2.toPx(height),
-                    action.durationMs.toLong()
-                )
-                if (ok) "已滑动" else "滑动没有生效"
+                val x1 = action.x1.toPx(width)
+                val y1 = action.y1.toPx(height)
+                val x2 = action.x2.toPx(width)
+                val y2 = action.y2.toPx(height)
+                val ok = if (action.holdMs > 0) {
+                    // 摇杆 / 持续移动：划到终点后按住不放
+                    service.dragHold(x1, y1, x2, y2, action.durationMs.toLong(), action.holdMs.toLong())
+                } else {
+                    service.swipe(x1, y1, x2, y2, action.durationMs.toLong())
+                }
+                if (ok) action.describe() else "滑动没有生效"
             }
 
             is AgentAction.Scroll -> {

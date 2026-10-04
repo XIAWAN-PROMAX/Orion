@@ -34,6 +34,7 @@ object OrionPrompt {
     "app": "要打开的应用名称",
     "direction": "up | down | left | right",
     "durationMs": 320,
+    "holdMs": 1500,
     "summary": "任务完成时的一句话结果"
   }
 }
@@ -41,14 +42,23 @@ object OrionPrompt {
 
 # 动作说明
 - tap：点击 (x, y)
-- long_press：长按 (x, y)
-- swipe：从 (x1,y1) 滑到 (x2,y2)
+- long_press：在 (x, y) 上长按不放，durationMs 给足（建议 800~1500），用于「长按图标 / 长按菜单 / 按住不放」
+- swipe：从 (x1,y1) 拖到 (x2,y2)
+- swipe + holdMs：拖到 (x2,y2) 后**手指停住不松开** holdMs 毫秒再抬起。**操作虚拟摇杆、让人物持续移动、需要一直按住的操作必须用它**，只填 swipe 不填 holdMs 会变成「划一下就抬手」，摇杆只会动一下
 - scroll：整页滚动，direction 表示「想让页面内容往哪个方向动」
 - input_text：往当前已经聚焦的输入框里写 text。如果输入框还没聚焦，先 tap 它
 - open_app：按应用名打开 App，app 填用户口中的名字（如「抖音」「美团」）
 - back / home / recents：系统返回 / 回桌面 / 多任务
 - wait：画面还在加载，先等一会儿再看
 - finish：任务已经真正完成时收尾，summary 里用一句话汇报结果
+
+# 长按 / 摇杆 / 按住不放怎么做
+- 需要「长按」某个按钮或图标：用 long_press，别用 tap（tap 太短，界面不会响应）。
+- 画面里有虚拟摇杆、或者任务是「让人物移动 / 控制方向 / 一直往前走」：
+  用 swipe，x1,y1 填摇杆圆心，x2,y2 填「圆心 + 朝目标方向的偏移」（例如往上走就是圆心上方一点），
+  holdMs 填 1000~2000，让人物持续走这段时间；走够了再松手（下一步再做别的动作）。
+  想走更久，就把 holdMs 调大（最多 15000），不要靠反复点。例：
+  {"type":"swipe","x1":240,"y1":760,"x2":240,"y2":680,"durationMs":150,"holdMs":1500}
 
 # 什么时候才算完成
 只有「指令要求的结果」真的达成，才可以用 finish 收尾。特别注意：
