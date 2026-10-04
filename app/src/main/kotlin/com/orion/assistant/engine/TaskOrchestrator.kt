@@ -202,6 +202,8 @@ object TaskOrchestrator {
         }
 
         val history = mutableListOf<String>()
+        // 模型在第一步列出的整体子目标：每一步都带回给它，防止刚进入某个页面就误判「完成」
+        val overallPlan = mutableListOf<String>()
         var step = 0
         var lastSignature = ""
         var repeated = 0
@@ -242,7 +244,8 @@ object TaskOrchestrator {
                     stepIndex = step,
                     maxSteps = maxSteps,
                     history = history,
-                    screenText = screenText
+                    screenText = screenText,
+                    overallPlan = overallPlan
                 )
 
                 when (outcome) {
@@ -254,6 +257,12 @@ object TaskOrchestrator {
                     is PlanOutcome.Success -> {
                         val plan = outcome.plan
                         currentThought = plan.thought
+
+                        // 第一步模型会给出整体子目标清单，把它记下来，之后每一步都带回给模型，
+                        // 提醒它「还有哪些没做完」，避免刚进入某个页面就误判完成。
+                        if (overallPlan.isEmpty() && plan.plan.isNotEmpty()) {
+                            overallPlan += plan.plan
+                        }
 
                         if (plan.isFinish) {
                             conclude(

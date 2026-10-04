@@ -141,7 +141,12 @@ sealed interface AgentAction {
 data class AgentPlan(
     val thought: String,
     val action: AgentAction,
-    val summary: String
+    val summary: String,
+    /**
+     * 模型给出的整体子目标清单。任务开始时由它列出，之后每一步都会被带回给模型，
+     * 用来提醒「还有哪些没做完」——否则模型很容易刚进入某个页面就误以为任务完成了。
+     */
+    val plan: List<String> = emptyList()
 ) {
     val isFinish: Boolean get() = action is AgentAction.Finish
 }

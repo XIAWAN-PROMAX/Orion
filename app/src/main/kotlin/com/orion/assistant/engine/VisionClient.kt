@@ -26,7 +26,8 @@ class VisionClient(private val settings: SettingsRepository) {
         stepIndex: Int,
         maxSteps: Int,
         history: List<String>,
-        screenText: String
+        screenText: String,
+        overallPlan: List<String>
     ): PlanOutcome = withContext(Dispatchers.IO) {
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) {
@@ -45,7 +46,8 @@ class VisionClient(private val settings: SettingsRepository) {
             stepIndex = stepIndex,
             maxSteps = maxSteps,
             history = history,
-            screenText = screenText
+            screenText = screenText,
+            overallPlan = overallPlan
         )
 
         val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
@@ -91,7 +93,8 @@ class VisionClient(private val settings: SettingsRepository) {
         stepIndex: Int,
         maxSteps: Int,
         history: List<String>,
-        screenText: String
+        screenText: String,
+        overallPlan: List<String>
     ): String {
         val userParts = JSONArray()
             .put(
@@ -99,7 +102,9 @@ class VisionClient(private val settings: SettingsRepository) {
                     .put("type", "text")
                     .put(
                         "text",
-                        OrionPrompt.userMessage(instruction, stepIndex, maxSteps, history, screenText)
+                        OrionPrompt.userMessage(
+                            instruction, stepIndex, maxSteps, history, screenText, overallPlan
+                        )
                     )
             )
             .put(
@@ -165,12 +170,22 @@ class VisionClient(private val settings: SettingsRepository) {
         val thought = json.optString("thought").ifBlank { "正在观察屏幕…" }
         val action = AgentAction.parse(json.optJSONObject("action"))
         val summary = json.optString("summary")
+        // 模型列出的整体子目标清单：任务开始时给一次即可，之后会被带回每一步
+        val plan = json.optJSONArray("plan")?.let { arr ->
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optString(i).trim()
+                    if (item.isNotEmpty()) add(item)
+                }
+            }
+        }.orEmpty()
 
         return PlanOutcome.Success(
             AgentPlan(
                 thought = thought,
                 action = action,
-                summary = summary.ifBlank { if (action is AgentAction.Finish) "任务结束" else "" }
+                summary = summary.ifBlank { if (action is AgentAction.Finish) "任务结束" else "" },
+                plan = plan
             )
         )
     }
