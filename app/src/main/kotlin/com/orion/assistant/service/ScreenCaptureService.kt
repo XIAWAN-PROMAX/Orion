@@ -43,15 +43,20 @@ class ScreenCaptureService : Service() {
     private var frameTimestamp: Long = 0L
 
     /**
-     * 当前帧是否已经交给了外部使用（引擎正在编码/推理）。
+     * 保护 [latestFrame] / [borrowed] 的锁。
      *
-     * ImageReader 每来一帧都会替换 latestFrame。如果无脑回收上一帧，就会把引擎
-     * 手上那张正在 compress() 的 Bitmap 回收掉，直接抛
-     * "Can't call compress() on a recycled bitmap" —— 这就是「截图失败」最常见的原因。
-     * 所以这里记一个「是否已外借」的标记，外借中的帧只交给 GC，不主动 recycle。
+     * ImageReader 在后台线程不断换帧，引擎在主线程取帧。两边不加锁的话，
+     * 「引擎刚读到帧、还没标记借用」的瞬间如果来了新帧，新帧线程会把这张正在被读的
+     * Bitmap 回收掉，随后 compress() 直接抛 "Can't call compress() on a recycled bitmap"
+     * —— 这就是「截图失败」偶发的原因。
      */
-    @Volatile
-    private var frameInUse: Boolean = false
+    private val frameLock = Any()
+
+    /**
+     * 引擎当前借走的那一帧。回收上一帧时必须避开它；引擎换用新帧后，
+     * 旧的借出帧可以立刻回收，避免旧帧永久泄漏。
+     */
+    private var borrowed: Bitmap? = null
 
     /** 启动投屏过程中遇到的真实错误，便于 UI 提示具体原因而不是笼统的「截图失败」 */
     @Volatile
@@ -86,8 +91,17 @@ class ScreenCaptureService : Service() {
                     shutdown()
                 }
             }
+
+            else -> {
+                // 系统以 START_STICKY 重启服务时 intent 为 null：投屏授权已随进程失效，
+                // 无法恢复采集。若不处理，Android 12+ 会因「前台服务未及时 startForeground」杀进程。
+                shutdown()
+                return START_NOT_STICKY
+            }
         }
-        return START_STICKY
+        // 统一用 START_NOT_STICKY：被系统杀掉后不自动重启（MediaProjection 授权本来也已失效，
+        // 需要用户回到 App 重新授权），避免带 null intent 复活后崩在前台服务校验上。
+        return START_NOT_STICKY
     }
 
     private fun startForegroundWithType() {
@@ -126,6 +140,19 @@ class ScreenCaptureService : Service() {
             .getOrNull() ?: return
         projection = mediaProjection
 
+        mediaProjection.registerCallback(
+            object : MediaProjection.Callback() {
+                override fun onStop() {
+                    // Android 14+ 要求投屏结束后立刻收掉对应类型的前台服务，否则会被系统判为违规
+                    lastError = "投屏已被系统或用户结束，请重新授权截屏"
+                    releaseProjection()
+                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    runCatching { stopSelf() }
+                }
+            },
+            handler
+        )
+
         val metrics = currentDisplayMetrics()
         val width = metrics.first
         val height = metrics.second
@@ -139,21 +166,7 @@ class ScreenCaptureService : Service() {
             return
         }
         imageReader = reader
-
         reader.setOnImageAvailableListener({ r -> onFrameAvailable(r) }, handler)
-
-        mediaProjection.registerCallback(
-            object : MediaProjection.Callback() {
-                override fun onStop() {
-                    // Android 14+ 要求投屏结束后立刻收掉对应类型的前台服务，否则会被系统判为违规
-                    lastError = "投屏已被系统或用户结束，请重新授权截屏"
-                    releaseProjection()
-                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-                    runCatching { stopSelf() }
-                }
-            },
-            handler
-        )
 
         virtualDisplay = runCatching {
             mediaProjection.createVirtualDisplay(
@@ -181,13 +194,17 @@ class ScreenCaptureService : Service() {
         val image = runCatching { reader.acquireLatestImage() }.getOrNull() ?: return
         try {
             val bitmap = runCatching { imageToBitmap(image) }.getOrNull() ?: return
-            val previous = latestFrame
-            val previousInUse = frameInUse
-            latestFrame = bitmap
-            frameTimestamp = System.currentTimeMillis()
-            frameInUse = false
-            if (previous != null && previous !== bitmap && !previousInUse && !previous.isRecycled) {
-                previous.recycle()
+            synchronized(frameLock) {
+                val previous = latestFrame
+                latestFrame = bitmap
+                frameTimestamp = System.currentTimeMillis()
+                // 只回收「不是新帧、也没有被引擎借走」的上一帧；
+                // 引擎手上那张记在 borrowed 里，绝不动它。
+                if (previous != null && previous !== bitmap &&
+                    previous !== borrowed && !previous.isRecycled
+                ) {
+                    previous.recycle()
+                }
             }
         } finally {
             runCatching { image.close() }
@@ -228,12 +245,17 @@ class ScreenCaptureService : Service() {
     }
 
     /** 取最新一帧。返回的是内部复用的 Bitmap，调用方不要 recycle 它。 */
-    fun latestScreenshot(): Bitmap? {
+    fun latestScreenshot(): Bitmap? = synchronized(frameLock) {
         val bmp = latestFrame
-        if (bmp == null || bmp.isRecycled) return null
-        // 标记为「已外借」：在新的帧到来前，不会被回收
-        frameInUse = true
-        return bmp
+        if (bmp == null || bmp.isRecycled) {
+            null
+        } else {
+            // 引擎已经换用这一帧，说明上一张借出帧用完了，可以安全回收，避免旧帧泄漏
+            val old = borrowed
+            if (old != null && old !== bmp && !old.isRecycled) old.recycle()
+            borrowed = bmp
+            bmp
+        }
     }
 
     fun lastFrameAgeMs(): Long =
@@ -252,9 +274,12 @@ class ScreenCaptureService : Service() {
         virtualDisplay = null
         imageReader = null
         projection = null
-        latestFrame = null
-        frameTimestamp = 0L
-        frameInUse = false
+        synchronized(frameLock) {
+            // 只丢引用不 recycle：引擎可能正拿着 borrowed 这张在编码，交给 GC 处理
+            latestFrame = null
+            borrowed = null
+            frameTimestamp = 0L
+        }
     }
 
     private fun shutdown() {
@@ -281,9 +306,26 @@ class ScreenCaptureService : Service() {
         @Volatile
         private var instance: ScreenCaptureService? = null
 
+        /** 用户授予的截屏授权（进程内记住，避免每个任务都重新弹窗） */
+        @Volatile
+        private var pendingResultCode: Int = Activity.RESULT_CANCELED
+
+        @Volatile
+        private var pendingData: Intent? = null
+
         val current: ScreenCaptureService? get() = instance
 
         fun isRunning(): Boolean = instance?.projection != null
+
+        /** 授权页拿到结果后调用：建立投屏会话并开始采集 */
+        fun rememberConsent(context: Context, resultCode: Int, data: Intent) {
+            pendingResultCode = resultCode
+            pendingData = data
+            start(context, resultCode, data)
+        }
+
+        /** 是否已拿到过截屏授权（App 进程重启后需要重新授权） */
+        fun hasConsent(): Boolean = pendingData != null
 
         /** 用户点了「允许截屏」之后调用，把授权结果交给前台服务 */
         fun start(context: Context, resultCode: Int, data: Intent) {

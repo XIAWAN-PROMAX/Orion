@@ -54,6 +54,15 @@ object TaskOrchestrator {
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
+    /**
+     * 任务代数：每次 start 自增。
+     *
+     * 协程取消是异步的，被停掉的旧任务可能还会跑一小段才退出。用代数标识「这一轮」，
+     * 旧协程回来调用 conclude 时会因代数不匹配被忽略，绝不覆盖新任务的状态。
+     */
+    private var runToken = 0
+    private var concludedToken = -1
+
     // ------------------------------------------------------------ 可观察状态
 
     var status by mutableStateOf(TaskStatus.IDLE)
@@ -102,13 +111,23 @@ object TaskOrchestrator {
     /** 前置条件检查；返回 null 表示可以启动，否则返回需要提示用户的原因 */
     fun checkPrerequisites(): String? = when {
         OrionAccessibilityService.current == null -> "还没开启无障碍服务，Orion 没法操作屏幕"
-        !ScreenCaptureService.isRunning() -> "还没授权截屏，Orion 看不到屏幕"
+        !ScreenCaptureService.isRunning() && !ScreenCaptureService.hasConsent() ->
+            "还没授权截屏，Orion 看不到屏幕"
         settings.apiKey.isBlank() -> "还没填 API Key，Orion 想不明白该怎么做"
         else -> null
     }
 
     fun start(rawInstruction: String) {
-        if (job?.isActive == true) return
+        // 正在跑的任务不允许重复启动
+        if (status.isActive) return
+        // 先换代数，再掐断旧协程：这样无论下面因何提前 return，被停掉的旧任务
+        // 之后回来 conclude 都会因代数不匹配被忽略，不会覆盖本次的状态。
+        val token = ++runToken
+        concludedToken = -1
+        // 状态已是终态、但协程可能还在收尾（例如用户刚点过「停止」）：
+        // 先掐断旧协程，否则 job.isActive 会让「开始」被静默吞掉、看起来像按钮失灵。
+        job?.cancel()
+
         val problem = checkPrerequisites()
         if (problem != null) {
             status = TaskStatus.FAILED
@@ -144,7 +163,7 @@ object TaskOrchestrator {
             indeterminate = true
         )
 
-        job = scope.launch { runTask(text) }
+        job = scope.launch { runTask(token, text) }
     }
 
     fun pause() {
@@ -165,18 +184,15 @@ object TaskOrchestrator {
         if (!status.isActive) return
         stopRequested = true
         pauseRequested = false
-        // 立刻给出可见反馈：否则界面还停在「正在执行」，会被当成按钮没反应而反复点
-        currentThought = "正在停止…"
-        currentActionText = ""
 
-        val running = job
-        if (running == null || !running.isActive) {
-            conclude(TaskStatus.STOPPED, "已手动停止")
-        } else {
-            // 直接取消协程：正在等待的轮询 / 步间隔延时会被立刻打断，
-            // 不用等当前这一步（模型调用最长可能要几十秒）跑完才停。
-            running.cancel()
-        }
+        // 立刻落到「已停止」并刷新实况：模型调用最长要 90 秒才超时返回，
+        // 若只发一个 cancel()，界面会一直停在「正在执行」，用户就会觉得按钮没反应。
+        // conclude 内部带代数去重，协程随后抛出的 CancellationException 不会再收尾第二次。
+        conclude(runToken, TaskStatus.STOPPED, "已手动停止")
+
+        // 再掐断协程：正在等待的轮询 / 步间隔延时会被立刻打断。
+        // 卡在模型网络请求里时由 VisionClient 的 runInterruptible 负责中断。
+        job?.cancel()
     }
 
     /** 任务结束后清空状态区，回到初始界面 */
@@ -189,14 +205,15 @@ object TaskOrchestrator {
         stepIndex = 0
         currentThought = ""
         currentActionText = ""
-        previewFrame?.takeIf { !it.isRecycled }?.recycle()
+        // 只丢掉引用，不做 recycle：Compose 可能仍在绘制上一张缩略图，
+        // 主动 recycle 会偶发 "Canvas: trying to use a recycled bitmap" 崩溃，交给 GC 回收即可。
         previewFrame = null
         pushLiveUpdate("Orion 已就绪", "等待你的指令", "待命中", 0, true)
     }
 
     // ------------------------------------------------------------ 主循环
 
-    private suspend fun runTask(text: String) {
+    private suspend fun runTask(token: Int, text: String) {
         currentTaskId = withContext(Dispatchers.IO) {
             runCatching { repository.createTask(text) }.getOrDefault(-1L)
         }
@@ -207,17 +224,20 @@ object TaskOrchestrator {
         var step = 0
         var lastSignature = ""
         var repeated = 0
+        // 连续「不能改变屏幕」的动作次数（wait / 无法识别的类型 / 空输入）。
+        // 这类动作执行了也等于没做，绝不能让它们当成进度一步步混过去。
+        var noopStreak = 0
 
         try {
             while (step < maxSteps) {
                 if (stopRequested) {
-                    conclude(TaskStatus.STOPPED, "已手动停止")
+                    conclude(token, TaskStatus.STOPPED, "已手动停止")
                     return
                 }
                 while (pauseRequested) {
                     delay(150)
                     if (stopRequested) {
-                        conclude(TaskStatus.STOPPED, "已手动停止")
+                        conclude(token, TaskStatus.STOPPED, "已手动停止")
                         return
                     }
                 }
@@ -226,6 +246,7 @@ object TaskOrchestrator {
                 if (screen == null) {
                     val reason = ScreenCaptureService.lastError()
                     conclude(
+                        token,
                         TaskStatus.FAILED,
                         if (reason.isNullOrBlank()) {
                             "拿不到屏幕画面，请重新授权截屏后再试"
@@ -237,8 +258,15 @@ object TaskOrchestrator {
                 }
                 updatePreview(screen)
 
-                // 界面文字只截一小段：太长会拖慢模型，而且容易分散它的注意力
-                val screenText = OrionAccessibilityService.current?.screenTextSnippet(25).orEmpty()
+                // 界面文字带中心坐标：做题要点准某个选项，只给文字模型只能靠截图猜位置，
+                // 带上坐标它可以直接照着点。
+                //
+                // 但遍历无障碍节点是逐个子节点 IPC，节点多时能跑几百毫秒甚至更久。
+                // 之前它在主线程跑，每一步都卡住 UI，表现就是「暂停 / 停止按钮按不动」，
+                // 所以这里必须挪到后台线程。
+                val screenText = withContext(Dispatchers.Default) {
+                    OrionAccessibilityService.current?.screenTextWithBounds(60).orEmpty()
+                }
                 val outcome = vision.plan(
                     instruction = text,
                     screenshot = screen,
@@ -249,14 +277,18 @@ object TaskOrchestrator {
                     overallPlan = overallPlan
                 )
 
+                // 这一步实际执行的动作，用于自适应步间隔
+                var stepAction: AgentAction = AgentAction.Wait
+
                 when (outcome) {
                     is PlanOutcome.Failure -> {
-                        conclude(TaskStatus.FAILED, outcome.message)
+                        conclude(token, TaskStatus.FAILED, outcome.message)
                         return
                     }
 
                     is PlanOutcome.Success -> {
                         val plan = outcome.plan
+                        stepAction = plan.action
                         currentThought = plan.thought
 
                         // 第一步模型会给出整体子目标清单，把它记下来，之后每一步都带回给模型，
@@ -267,11 +299,37 @@ object TaskOrchestrator {
 
                         if (plan.isFinish) {
                             conclude(
+                                token,
                                 TaskStatus.COMPLETED,
                                 plan.summary.ifBlank { "任务已完成" }
                             )
                             return
                         }
+
+                        // 「只说不做」的根因：模型把答案写在 thought 里，action 却给了 wait /
+                        // 列表外的类型 / 空的 input_text。这类动作执行了屏幕也不会变，之前却会被
+                        // 当成一步混过去（wait 更是重问一次后就一路空转到结束）。
+                        // 现在统一按「无效动作」处理：不计步数、带着强硬提醒重问，直到它真的动手；
+                        // 连续多次仍不动手才停下并如实说明，绝不再假装在推进。
+                        val noop = plan.action is AgentAction.Wait ||
+                            plan.action is AgentAction.Unknown ||
+                            (plan.action is AgentAction.InputText && plan.action.text.isBlank())
+
+                        if (noop) {
+                            noopStreak++
+                            if (noopStreak <= 3) {
+                                history += "你上一步给出的动作「${plan.action.describe()}」不会改变屏幕，" +
+                                    "无效。你 thought 里已经想好的做法，必须直接变成 tap / input_text / " +
+                                    "scroll 这类真实动作；禁止再用 wait，也不要输出列表以外的类型。"
+                                currentThought = plan.thought.ifBlank { "正在把想法变成真实动作…" }
+                                currentActionText = plan.action.describe()
+                                delay(200)
+                                continue
+                            }
+                            conclude(token, TaskStatus.FAILED, "模型连续给出无法执行的动作，先停下，换个说法再试")
+                            return
+                        }
+                        noopStreak = 0
 
                         currentActionText = plan.action.describe()
                         // 实况通知里写「Orion 自己输出的内容」：优先展示模型的 thought（它的实时解说），
@@ -329,25 +387,34 @@ object TaskOrchestrator {
                         repeated = if (signature == lastSignature) repeated + 1 else 0
                         lastSignature = signature
                         if (repeated >= 2) {
-                            history += "注意：上一个动作已经重复了 ${repeated + 1} 次，请换一种做法"
+                            history += "注意：同一个动作「${plan.action.describe()}」已经连续做了 ${repeated + 1} 次，" +
+                                "说明它没生效（画面毫无变化）。请换一种做法：换坐标、换动作类型，" +
+                                "或先 scroll / back 看看当前到底在哪个页面。"
                             repeated = 0
                         }
                     }
                 }
 
-                delay(randomStepDelay())
+                delay(adaptiveStepDelay(screenText, stepAction))
             }
 
-            conclude(TaskStatus.STOPPED, "已经执行 $maxSteps 步还没完成，先停下来，你可以把任务拆得更小一些")
+            conclude(token, TaskStatus.STOPPED, "已经执行 $maxSteps 步还没完成，先停下来，你可以把任务拆得更小一些")
         } catch (cancel: CancellationException) {
             // 用户点了「停止」：协程被取消，这里要落到「已停止」，不能当成失败
-            conclude(TaskStatus.STOPPED, "已手动停止")
+            conclude(token, TaskStatus.STOPPED, "已手动停止")
         } catch (t: Throwable) {
-            conclude(TaskStatus.FAILED, "执行过程中出错：${t.message}")
+            conclude(token, TaskStatus.FAILED, "执行过程中出错：${t.message}")
         }
     }
 
-    private fun conclude(finalStatus: TaskStatus, summary: String) {
+    /**
+     * 统一收尾。带任务代数做去重：
+     *  - 代数不匹配 → 说明是「已被停止/替换掉的旧任务」回来收尾，直接忽略，绝不覆盖新任务状态；
+     *  - 同一代数已收尾过 → 忽略，避免「停止」时手动收尾一次、协程取消又收尾一次，通知闪两下。
+     */
+    private fun conclude(token: Int, finalStatus: TaskStatus, summary: String) {
+        if (token != runToken || concludedToken == token) return
+        concludedToken = token
         status = finalStatus
         resultSummary = summary
         errorMessage = if (finalStatus == TaskStatus.FAILED) summary else ""
@@ -394,23 +461,59 @@ object TaskOrchestrator {
         }
     }
 
-    /** 生成一张 UI 用的缩略图（服务会回收原图，所以必须拷贝一份小的） */
-    private fun updatePreview(source: Bitmap) {
-        runCatching {
-            val longest = maxOf(source.width, source.height)
-            val scale = if (longest > PREVIEW_EDGE) PREVIEW_EDGE.toFloat() / longest else 1f
-            val w = (source.width * scale).toInt().coerceAtLeast(1)
-            val h = (source.height * scale).toInt().coerceAtLeast(1)
-            val thumb = Bitmap.createScaledBitmap(source, w, h, true)
-            previewFrame?.takeIf { !it.isRecycled && it !== thumb }?.recycle()
-            previewFrame = thumb
-        }
+    /** 生成一张 UI 用的缩略图（source 是截屏服务的内部帧，必须拷一份独立的） */
+    private suspend fun updatePreview(source: Bitmap) {
+        // 缩放整张截图也要几十毫秒，放后台算，别占用主线程。
+        val thumb = withContext(Dispatchers.Default) {
+            runCatching {
+                val longest = maxOf(source.width, source.height)
+                if (longest <= PREVIEW_EDGE) {
+                    // 尺寸本来就够小：createScaledBitmap 可能直接把原图返回，导致缩略图与
+                    // 截屏服务的内部帧是同一个对象，稍后被服务回收就崩。这里强制拷贝一份。
+                    source.copy(Bitmap.Config.ARGB_8888, false)
+                } else {
+                    val scale = PREVIEW_EDGE.toFloat() / longest
+                    Bitmap.createScaledBitmap(
+                        source,
+                        (source.width * scale).toInt().coerceAtLeast(1),
+                        (source.height * scale).toInt().coerceAtLeast(1),
+                        true
+                    )
+                }
+            }.getOrNull()
+        } ?: return
+        // 旧缩略图只丢引用不 recycle：Compose 可能仍在绘制，交给 GC。
+        previewFrame = thumb
     }
 
-    /** 每步之间的随机间隔，避免机械节奏 */
-    private fun randomStepDelay(): Long {
+    /**
+     * 自适应步间隔：按「当前这张截图」的复杂程度决定这一步之后停多久。
+     *
+     * 画面越复杂（文字节点越多、总字数越大），说明信息量大、页面可能还在重排，
+     * 就多停一点；画面简单（纯列表、空白页）就少停，整体节奏更快。
+     * 停顿区间仍由「设置」里的速度偏好决定，所以选「轻快」会整体更快。
+     */
+    private fun adaptiveStepDelay(screenText: String, action: AgentAction): Long {
+        val nodes = screenText.split('|').count { it.isNotBlank() }
+        // 文字节点数、总字数 → 0.0~1.0 的复杂度
+        val nodeScore = (nodes / 40f).coerceIn(0f, 1f)
+        val charScore = (screenText.length / 1200f).coerceIn(0f, 1f)
+        val complexity = nodeScore * 0.6f + charScore * 0.4f
+
         val speed = settings.speed
-        return Random.nextLong(speed.minDelayMs, speed.maxDelayMs + 1)
+        val span = (speed.maxDelayMs - speed.minDelayMs).toFloat()
+        var delayMs = speed.minDelayMs + span * complexity
+
+        // 页面切换类动作需要一点余量让新页面稳定
+        if (action is AgentAction.OpenApp || action is AgentAction.Back ||
+            action is AgentAction.Home || action is AgentAction.Recents
+        ) {
+            delayMs += 180
+        }
+
+        // 抖动一点，避免机械节奏
+        delayMs += Random.nextLong(-60, 61)
+        return delayMs.toLong().coerceAtLeast(150L)
     }
 
     private fun stepPercent(step: Int = stepIndex): Int {

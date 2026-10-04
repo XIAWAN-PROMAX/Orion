@@ -71,8 +71,9 @@ fun OrionRoot() {
     ) { result ->
         val data: Intent? = result.data
         if (result.resultCode == Activity.RESULT_OK && data != null) {
-            // 拿到授权，交给前台服务去真正开始投屏
-            ScreenCaptureService.start(context, result.resultCode, data)
+            // 拿到授权后立刻建立投屏会话（用掉一次性 token），但不采集画面；
+            // 真正开始截屏要等「开始任务」，任务结束会停止采集。
+            ScreenCaptureService.rememberConsent(context, result.resultCode, data)
         }
     }
 

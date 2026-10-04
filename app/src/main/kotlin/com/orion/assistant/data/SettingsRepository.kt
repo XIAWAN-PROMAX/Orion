@@ -58,6 +58,7 @@ enum class OperationSpeed(
     val minDelayMs: Long,
     val maxDelayMs: Long
 ) {
+    SMART("智能", "按画面复杂度自动调节，忽快忽慢", 260, 2000),
     CAREFUL("沉稳", "每步停 1.2~2.0 秒，适合填表单", 1200, 2000),
     NORMAL("标准", "每步停 0.6~1.1 秒，推荐", 600, 1100),
     SWIFT("轻快", "每步停 0.25~0.55 秒，适合刷内容", 250, 550);

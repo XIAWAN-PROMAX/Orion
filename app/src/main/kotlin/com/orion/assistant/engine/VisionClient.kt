@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.util.Base64
 import com.orion.assistant.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -51,11 +54,16 @@ class VisionClient(private val settings: SettingsRepository) {
         )
 
         val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
+        // runInterruptible：用户点「停止」时，协程取消会去中断这个阻塞的 HTTP 读，
+        // 不用一直干等到 90 秒超时。ensureActive() 保证取消异常不会被下面的
+        // catch 吞掉、误报成「调用模型失败」。
         val raw = try {
-            postJson(endpoint, apiKey, payload)
+            runInterruptible { postJson(endpoint, apiKey, payload) }
         } catch (e: IOException) {
+            currentCoroutineContext().ensureActive()
             return@withContext PlanOutcome.Failure(humanizeHttpError(e.message))
         } catch (t: Throwable) {
+            currentCoroutineContext().ensureActive()
             return@withContext PlanOutcome.Failure("调用模型失败：${t.message}")
         }
 
@@ -121,7 +129,7 @@ class VisionClient(private val settings: SettingsRepository) {
             .put("model", settings.model)
             .put("messages", messages)
             .put("temperature", 0.2)
-            .put("max_tokens", 900)
+            .put("max_tokens", 2048)
             .put("stream", false)
             .toString()
     }
@@ -250,7 +258,7 @@ class VisionClient(private val settings: SettingsRepository) {
             this
         }
         val bytes = ByteArrayOutputStream().use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 72, out)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
             if (scaled !== this) scaled.recycle()
             out.toByteArray()
         }
@@ -281,7 +289,7 @@ class VisionClient(private val settings: SettingsRepository) {
     }
 
     private companion object {
-        /** 送给模型前先把截图缩到这个边长，兼顾识别率和速度 */
-        const val MAX_IMAGE_EDGE = 1280
+        /** 送给模型前先把截图缩到这个边长。做题要读小字，清晰度优先；卡顿根因已挪到后台线程 */
+        const val MAX_IMAGE_EDGE = 1440
     }
 }

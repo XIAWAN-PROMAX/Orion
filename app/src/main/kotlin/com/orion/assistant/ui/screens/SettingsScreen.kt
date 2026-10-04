@@ -46,6 +46,7 @@ import com.orion.assistant.orionApp
 import com.orion.assistant.ui.components.GlassCard
 import com.orion.assistant.ui.components.GlassSegmented
 import com.orion.assistant.ui.components.GlassTextField
+import com.orion.assistant.ui.components.GradientStar
 import com.orion.assistant.ui.components.OrionToggle
 import com.orion.assistant.ui.components.OrionTopBar
 import com.orion.assistant.ui.components.SectionTitle
@@ -284,7 +285,11 @@ fun SettingsScreen(
                         app.settings.speed = it
                     },
                     label = { it.label },
-                    backdrop = backdrop
+                    backdrop = backdrop,
+                    // 「智能」档旁边配一颗渐变小星
+                    trailing = { option ->
+                        if (option == OperationSpeed.SMART) GradientStar()
+                    }
                 )
 
                 Spacer(Modifier.height(20.dp))
@@ -420,7 +425,7 @@ fun SettingsScreen(
             GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "xiawan开发\n" +
-                        "orionV1.0.0\n" +
+                        "orionV2.0.0\n" +
                         "本项目基于 GNU General Public License v3.0 发布，不可商用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OrionColors.TextSecondary

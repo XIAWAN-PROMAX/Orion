@@ -54,7 +54,8 @@ object OrionPermissions {
     }
 
     /** 截屏授权是否仍然有效（MediaProjection 需要 App 进程活着才有意义） */
-    fun isCaptureGranted(): Boolean = ScreenCaptureService.isRunning()
+    fun isCaptureGranted(): Boolean =
+        ScreenCaptureService.isRunning() || ScreenCaptureService.hasConsent()
 
     fun isNotificationGranted(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true

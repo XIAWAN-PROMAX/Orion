@@ -1,6 +1,7 @@
 package com.orion.assistant.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.GestureResultCallback
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
@@ -13,11 +14,14 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import com.orion.assistant.engine.AgentAction
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -102,24 +106,50 @@ class OrionAccessibilityService : AccessibilityService() {
 
     // ---------------------------------------------------------------- 手势
 
+    /** 手势派发超时兜底：个别机型回调不来，避免协程永久挂起 */
+    private val gestureHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * 派发一个手势，并等它真正结束再返回。
+     *
+     * dispatchGesture 是异步的：以前只看它的 Boolean 返回值，结果上一段手势（长按 / 拖动）
+     * 还没结束，下一个动作就派发出去了，系统直接丢弃 → 表现为「有时候点了没反应」。
+     * 现在接上 GestureResultCallback，等 onCompleted / onCancelled 后才返回。
+     */
+    private suspend fun awaitGesture(gesture: GestureDescription, timeoutMs: Long): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val timer = Runnable { if (cont.isActive) cont.resume(false) }
+            val callback = object : GestureResultCallback() {
+                override fun onCompleted(description: GestureDescription?) {
+                    gestureHandler.removeCallbacks(timer)
+                    if (cont.isActive) cont.resume(true)
+                }
+
+                override fun onCancelled(description: GestureDescription?) {
+                    gestureHandler.removeCallbacks(timer)
+                    if (cont.isActive) cont.resume(false)
+                }
+            }
+            val dispatched = runCatching {
+                dispatchGesture(gesture, callback, null)
+            }.getOrDefault(false)
+            if (!dispatched) {
+                if (cont.isActive) cont.resume(false)
+                return@suspendCancellableCoroutine
+            }
+            gestureHandler.postDelayed(timer, timeoutMs)
+            cont.invokeOnCancellation { gestureHandler.removeCallbacks(timer) }
+        }
+
     /** 点击（归一化坐标 0~1000 由调用方换算为像素） */
-    fun tap(x: Float, y: Float): Boolean = stroke(
-        start = x to y,
-        end = (x + 1f) to (y + 1f),
-        durationMs = 60L
-    )
+    suspend fun tap(x: Float, y: Float): Boolean =
+        stroke(x to y, (x + 1f) to (y + 1f), 60L)
 
-    fun longPress(x: Float, y: Float, durationMs: Long = 700L): Boolean = stroke(
-        start = x to y,
-        end = (x + 1f) to (y + 1f),
-        durationMs = durationMs.coerceIn(300L, 15000L)
-    )
+    suspend fun longPress(x: Float, y: Float, durationMs: Long = 700L): Boolean =
+        stroke(x to y, (x + 1f) to (y + 1f), durationMs.coerceIn(300L, 15000L))
 
-    fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 320L): Boolean = stroke(
-        start = x1 to y1,
-        end = x2 to y2,
-        durationMs = durationMs.coerceIn(80L, 15000L)
-    )
+    suspend fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 320L): Boolean =
+        stroke(x1 to y1, x2 to y2, durationMs.coerceIn(80L, 15000L))
 
     /**
      * 按住拖动：先从起点快速划到终点，然后**手指停在终点不抬起**，持续 holdMs。
@@ -127,9 +157,10 @@ class OrionAccessibilityService : AccessibilityService() {
      * 这是操作虚拟摇杆 / 持续移动的关键——普通 swipe 划完立刻抬手，摇杆只会「点一下」；
      * 必须让手指停在偏移点上，游戏才会认为你一直在推杆，人物才会持续移动。
      *
-     * 用两段「续接笔画」实现：第一段快速移动并声明 willContinue，第二段从同一个点继续按住。
+     * 续接笔画（continueStroke）必须作为**另一个** GestureDescription 单独派发；
+     * 把原笔画和它的续接笔画塞进同一个手势是非法用法，会直接失败。
      */
-    fun dragHold(
+    suspend fun dragHold(
         x1: Float,
         y1: Float,
         x2: Float,
@@ -150,15 +181,34 @@ class OrionAccessibilityService : AccessibilityService() {
             holdMs.coerceIn(100L, 15000L),
             false
         )
-        val gesture = GestureDescription.Builder()
-            .addStroke(move)
-            .addStroke(hold)
-            .build()
-        return runCatching { dispatchGesture(gesture, null, null) }.getOrDefault(false)
+        // 第一段：快速移动到终点，声明「还会继续」
+        val first = runCatching {
+            dispatchGesture(GestureDescription.Builder().addStroke(move).build(), null, null)
+        }.getOrDefault(false)
+        if (!first) return false
+
+        // 第二段：续接笔画必须单独作为下一个 gesture 派发
+        val done = awaitGesture(
+            GestureDescription.Builder().addStroke(hold).build(),
+            move.duration + hold.duration + 1500L
+        )
+        if (!done) {
+            // 续接没成功时补一段极短的续接把手势通道收尾，避免它一直悬着、毒化后续所有手势
+            val close = move.continueStroke(
+                Path().apply { moveTo(x2, y2); lineTo(x2, y2) },
+                move.duration,
+                1L,
+                false
+            )
+            runCatching {
+                dispatchGesture(GestureDescription.Builder().addStroke(close).build(), null, null)
+            }
+        }
+        return done
     }
 
     /** 页面滚动：direction 为 up/down/left/right，理解为「内容往哪个方向滚」。 */
-    fun scroll(direction: String): Boolean {
+    suspend fun scroll(direction: String): Boolean {
         val (w, h) = screenSize().let { it[0].toFloat() to it[1].toFloat() }
         val cx = w / 2f
         val cy = h / 2f
@@ -173,7 +223,7 @@ class OrionAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun stroke(start: Pair<Float, Float>, end: Pair<Float, Float>, durationMs: Long): Boolean {
+    private suspend fun stroke(start: Pair<Float, Float>, end: Pair<Float, Float>, durationMs: Long): Boolean {
         val path = Path().apply {
             moveTo(start.first, start.second)
             lineTo(end.first, end.second)
@@ -181,7 +231,7 @@ class OrionAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
             .build()
-        return runCatching { dispatchGesture(gesture, null, null) }.getOrDefault(false)
+        return awaitGesture(gesture, durationMs + 1500L)
     }
 
     // ---------------------------------------------------------------- 系统按键
@@ -359,6 +409,47 @@ class OrionAccessibilityService : AccessibilityService() {
             visited++
             val text = node.text?.toString()?.trim().orEmpty()
             if (text.isNotEmpty() && text.length in 1..80) out.add(text)
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
+        }
+        return out.joinToString(" | ")
+    }
+
+    /**
+     * 读界面文字，并带上每个节点的中心坐标（0~1000 归一化）。
+     *
+     * 只给文字不给坐标时，模型只能纯靠截图猜位置，做题这种「要精确点到某个选项」的场景就会
+     * 犹豫不敢点（表现为一直 wait）。带上坐标后它可以直接照着点。
+     * 格式：「文字」@(x,y)，x/y 可以直接填进 tap。
+     */
+    fun screenTextWithBounds(limit: Int = 60): String {
+        val root = rootInActiveWindow ?: return ""
+        val size = screenSize()
+        val width = size[0].toFloat()
+        val height = size[1].toFloat()
+        if (width <= 0f || height <= 0f) return ""
+
+        val out = ArrayList<String>(limit)
+        val seen = HashSet<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.addLast(root)
+        var visited = 0
+        // 访问上限压到 400：列表页节点多，遍历越深越慢；40~60 个可点文字已经够模型定位。
+        while (queue.isNotEmpty() && visited < 400 && out.size < limit) {
+            val node = queue.removeFirst()
+            visited++
+            val raw = (node.text ?: node.contentDescription)?.toString()
+                ?.replace('\n', ' ')?.trim().orEmpty()
+            // 跳过整段正文：长文本截前 24 字会被当成「可点标签」，反而误导模型。
+            if (raw.isNotEmpty() && raw.length <= 40) {
+                val label = raw.replace('|', '/').take(24)
+                val rect = Rect().also { node.getBoundsInScreen(it) }
+                if (rect.width() > 0 && rect.height() > 0 && rect.right > 0 && rect.bottom > 0) {
+                    val cx = ((rect.centerX() / width) * AgentAction.COORD_MAX).toInt().coerceIn(0, AgentAction.COORD_MAX)
+                    val cy = ((rect.centerY() / height) * AgentAction.COORD_MAX).toInt().coerceIn(0, AgentAction.COORD_MAX)
+                    // 父子节点常带同一段文字，按「文字+坐标」去重，避免重复噪声
+                    if (seen.add("$label@$cx,$cy")) out.add("「$label」@($cx,$cy)")
+                }
+            }
             for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
         }
         return out.joinToString(" | ")

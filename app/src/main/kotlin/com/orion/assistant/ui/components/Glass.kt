@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -31,9 +32,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -272,7 +278,9 @@ fun <T> GlassSegmented(
     onSelect: (T) -> Unit,
     label: (T) -> String,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 可选：给某个选项在文字右侧加一个小装饰（例如「智能」旁的渐变星） */
+    trailing: (@Composable (T) -> Unit)? = null
 ) {
     val selectedIndex = options.indexOf(selected).coerceAtLeast(0)
 
@@ -327,15 +335,47 @@ fun <T> GlassSegmented(
                             ) { onSelect(option) },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = label(option),
-                            color = textColor,
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = label(option),
+                                color = textColor,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            trailing?.invoke(option)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** 渐变色的迷你星，用作「智能」档的小标识 */
+@Composable
+fun GradientStar(modifier: Modifier = Modifier) {
+    val gradient = remember {
+        Brush.linearGradient(
+            colors = listOf(Color(0xFFFFC15E), Color(0xFFFF7AB6), Color(0xFF8A7BFF))
+        )
+    }
+    Box(
+        modifier
+            .padding(start = 4.dp)
+            .size(13.dp)
+            // 离屏合成，让下面 SrcIn 的渐变只作用在这颗星自身，不影响背景
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                // 以图标本身的不透明区域为蒙版，铺上渐变
+                drawRect(brush = gradient, blendMode = BlendMode.SrcIn)
+            }
+    ) {
+        Icon(
+            imageVector = OrionIcons.Sparkles,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 

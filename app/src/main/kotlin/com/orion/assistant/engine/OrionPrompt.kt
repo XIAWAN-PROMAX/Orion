@@ -25,7 +25,7 @@ object OrionPrompt {
   "thought": "一句话：看到什么、为什么这样做",
   "plan": ["子目标1", "子目标2"],
   "action": {
-    "type": "tap | long_press | swipe | scroll | input_text | open_app | back | home | recents | wait | finish",
+    "type": "tap | long_press | swipe | scroll | input_text | open_app | back | home | recents | finish",
     "x": 500, "y": 500,
     "x1": 500, "y1": 800, "x2": 500, "y2": 200,
     "text": "要输入的文字",
@@ -46,8 +46,8 @@ object OrionPrompt {
 - input_text 往已聚焦的输入框写 text（没聚焦就先 tap 它）
 - open_app 按应用名打开 App
 - back / home / recents 返回 / 回桌面 / 多任务
-- wait 画面还在加载，先等一会儿
 - finish 任务真正完成时收尾，summary 用一句话汇报结果
+- 禁止输出 wait：页面在加载也照样给出一个真实动作，不要用 wait 空等（wait 会被当作无效动作）。
 
 # 长按 / 摇杆（只有这两类才需要特殊处理）
 - 要「长按」就用 long_press，别用 tap。
@@ -55,8 +55,21 @@ object OrionPrompt {
   x1,y1 填摇杆圆心，x2,y2 填方向偏移点，手指停住按住，人物才会持续走。
   **普通滑动、滚动一律不要加 holdMs。**
 
+# 做题（答题 / 作业 / 选择题 / 填空题）
+- 必须读题再作答，但**答案一定要落到 action 上，不能只写在 thought 里**。
+  thought 用一两句话说明「这题选哪个、为什么」，紧接着 action 就必须是对应选项的 tap。
+- 选择题 → tap 你判断正确的那个选项；填空题 → 这一步先 tap 输入框，下一步 input_text 写答案。
+- 拿不准也要先选一个最可能的选项 tap 下去，绝不能用 wait 拖着不动。
+- 很多学习 App 选完还要点「检查 / 继续 / 下一题」才会进入下一题，答完别忘了点它。
+- 一题做完立刻做下一题，不要反复往回翻已经答过的题。
+- thought 保持简短（一两句），不要长篇推理；想清楚就立刻动手。
+- action.type 只能从上面列出的动作里选，禁止自己造新类型（例如 answer / choose / select）。
+- 只要你在 thought 里说「应该点 / 应该输入」，那个动作就必须出现在同一条 JSON 的 action 里；
+  只描述不执行视为无效。
+
 # 行为准则
 1. 每次行动后都会拿到新截图，宁可小步走，不要一次猜很多步。
+   但「小步走」指的是把一个动作做准，不是让你反复观察不动手：一步至少要推进一个真实动作。
 2. 先看当前在哪个 App、哪个页面；任务要求打开某 App 时先 open_app。
 3. 有弹窗 / 广告 / 权限询问挡路，先关掉再继续。
 4. 输入文字前先点输入框，下一步确认光标出现再 input_text。
@@ -109,7 +122,9 @@ object OrionPrompt {
             sb.append("你还没有执行过任何动作。\n")
         }
         if (screenText.isNotBlank()) {
-            sb.append("无障碍读到的界面文字（可能不全，仅供定位参考）：").append(screenText).append('\n')
+            sb.append("无障碍读到的界面文字（格式「文字」@(x,y)，x/y 是该控件中心在 0~1000 归一化坐标，")
+            sb.append("可以直接填进 tap 的 x、y，比你自己估的准，优先用它来点击）：\n")
+            sb.append(screenText).append('\n')
         }
         sb.append("下面是当前的手机截图，请输出下一步动作的 JSON。")
         return sb.toString()

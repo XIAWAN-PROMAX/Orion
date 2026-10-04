@@ -8,8 +8,13 @@ import com.orion.assistant.service.OrionAccessibilityService
  */
 object ActionExecutor {
 
-    /** 执行动作，返回一句可写入日志的结果描述 */
-    fun execute(action: AgentAction): String {
+    /**
+     * 执行动作，返回一句可写入日志的结果描述。
+     *
+     * 手势类动作是挂起的：会等 dispatchGesture 真正完成后才返回，
+     * 避免上一段长按 / 拖动还没结束就把下一个动作派发出去被系统丢弃。
+     */
+    suspend fun execute(action: AgentAction): String {
         val service = OrionAccessibilityService.current
             ?: return "无障碍服务没有连接，无法执行动作"
 
