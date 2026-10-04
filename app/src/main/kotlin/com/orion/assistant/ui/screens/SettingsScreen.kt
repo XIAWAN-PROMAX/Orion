@@ -33,7 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
@@ -72,6 +74,8 @@ fun SettingsScreen(
     var baseUrl by remember { mutableStateOf(app.settings.customBaseUrl) }
     var speed by remember { mutableStateOf(app.settings.speed) }
     var maxSteps by remember { mutableFloatStateOf(app.settings.maxSteps.toFloat()) }
+    // 拖动步数滑块时给每一档一点振动反馈，方便盲调到想要的轮数
+    val haptic = LocalHapticFeedback.current
     var saveScreenshots by remember { mutableStateOf(app.settings.saveScreenshots) }
     var customPrompt by remember { mutableStateOf(app.settings.customPrompt) }
 
@@ -301,11 +305,16 @@ fun SettingsScreen(
                 Slider(
                     value = maxSteps,
                     onValueChange = {
+                        val rounded = it.toInt()
+                        // 只在整数档位发生变化时震动一次，避免拖动过程中连续狂震
+                        if (rounded != maxSteps.toInt()) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                         maxSteps = it
-                        app.settings.maxSteps = it.toInt()
+                        app.settings.maxSteps = rounded
                     },
-                    valueRange = 5f..60f,
-                    steps = 54,
+                    valueRange = 5f..100f,
+                    steps = 94,
                     colors = SliderDefaults.colors(
                         thumbColor = OrionColors.Accent,
                         activeTrackColor = OrionColors.Accent,

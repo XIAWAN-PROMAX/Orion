@@ -157,7 +157,7 @@ class SettingsRepository(context: Context) {
     /** 单次任务最多执行多少步（防止无限循环） */
     var maxSteps: Int
         get() = prefs.getInt(KEY_MAX_STEPS, 25)
-        set(value) = write { putInt(KEY_MAX_STEPS, value.coerceIn(5, 60)) }
+        set(value) = write { putInt(KEY_MAX_STEPS, value.coerceIn(5, 100)) }
 
     /** 是否在任务过程中把屏幕截图存到 App 私有目录（默认关闭，省空间） */
     var saveScreenshots: Boolean
