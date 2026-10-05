@@ -86,13 +86,21 @@ object OrionPrompt {
 """.trimIndent()
 
     /**
-     * 系统提示词 + 用户自定义的附加要求。
-     * 自定义部分追加在后面，并声明优先级更高，方便用户约束 Orion 的做事习惯。
+     * 系统提示词 + 自学习经验 + 用户自定义的附加要求。
+     * 经验放在内置规则之后、自定义要求之前：它是「参考」，用户手写的才是「规矩」。
      */
-    fun system(custom: String): String {
+    fun system(custom: String, lessons: List<String> = emptyList()): String {
+        val sb = StringBuilder(SYSTEM)
+        val tips = lessons.map { it.trim() }.filter { it.isNotEmpty() }
+        if (tips.isNotEmpty()) {
+            sb.append("\n\n# 过往经验（来自你以前执行过的任务，供参考，不要生搬硬套）\n")
+            tips.forEach { sb.append("• ").append(it).append('\n') }
+        }
         val extra = custom.trim()
-        if (extra.isEmpty()) return SYSTEM
-        return SYSTEM + "\n\n# 用户自定义要求（与上面冲突时以此为准）\n" + extra
+        if (extra.isNotEmpty()) {
+            sb.append("\n\n# 用户自定义要求（与上面冲突时以此为准）\n").append(extra)
+        }
+        return sb.toString()
     }
 
     /** 拼接每一步的 user 消息文字部分 */

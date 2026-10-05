@@ -2,6 +2,7 @@ package com.orion.assistant
 
 import android.app.Application
 import android.content.Context
+import com.orion.assistant.data.LearningRepository
 import com.orion.assistant.data.SettingsRepository
 import com.orion.assistant.data.TaskRepository
 import com.orion.assistant.engine.TaskOrchestrator
@@ -17,12 +18,13 @@ class OrionApp : Application() {
 
     val settings: SettingsRepository by lazy { SettingsRepository(this) }
     val tasks: TaskRepository by lazy { TaskRepository(this) }
+    val learning: LearningRepository by lazy { LearningRepository(this) }
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         // 操作引擎需要长期持有仓库，退出界面也不影响正在跑的任务
-        TaskOrchestrator.init(this, settings, tasks)
+        TaskOrchestrator.init(this, settings, tasks, learning)
         LiveUpdateNotifier.ensureChannel(this)
     }
 

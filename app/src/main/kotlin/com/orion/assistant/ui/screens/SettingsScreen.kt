@@ -18,14 +18,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,6 +83,17 @@ fun SettingsScreen(
     val haptic = LocalHapticFeedback.current
     var saveScreenshots by remember { mutableStateOf(app.settings.saveScreenshots) }
     var customPrompt by remember { mutableStateOf(app.settings.customPrompt) }
+    var selfLearning by remember { mutableStateOf(app.settings.selfLearning) }
+    // 已攒下的经验条数，清空后归零
+    var learningCount by remember { mutableIntStateOf(0) }
+    // 待二次确认的清空操作：null 表示没有弹窗
+    var pendingClear by remember { mutableStateOf<ClearTarget?>(null) }
+
+    LaunchedEffect(Unit) {
+        learningCount = withContext(Dispatchers.IO) {
+            runCatching { app.learning.count() }.getOrDefault(0)
+        }
+    }
 
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -357,6 +372,36 @@ fun SettingsScreen(
                     placeholder = "例如：涉及付款的操作，一律先停下来问我",
                     minHeight = 96.dp
                 )
+
+                Spacer(Modifier.height(20.dp))
+
+                // 自学习：开关旁配一颗渐变小星，和「智能」档的标识一致
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "自学习",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = OrionColors.TextPrimary
+                            )
+                            GradientStar()
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "每次任务结束后自动复盘好的和不足的地方，攒成经验用到下次，越用越顺手。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OrionColors.TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    OrionToggle(
+                        checked = selfLearning,
+                        onCheckedChange = {
+                            selfLearning = it
+                            app.settings.selfLearning = it
+                        }
+                    )
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -410,9 +455,32 @@ fun SettingsScreen(
                         text = "清空",
                         backdrop = backdrop,
                         leading = Icons.Filled.Delete,
-                        onClick = {
-                            scope.launch(Dispatchers.IO) { runCatching { app.tasks.clearAll() } }
-                        }
+                        onClick = { pendingClear = ClearTarget.HISTORY }
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "清空自学习",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = OrionColors.TextPrimary
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "删除已攒下的全部经验（当前 $learningCount 条），Orion 会退回从头学",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OrionColors.TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    com.orion.assistant.ui.components.GlassButton(
+                        text = "清空",
+                        backdrop = backdrop,
+                        leading = Icons.Filled.Delete,
+                        onClick = { pendingClear = ClearTarget.LEARNING }
                     )
                 }
             }
@@ -425,7 +493,7 @@ fun SettingsScreen(
             GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "xiawan开发\n" +
-                        "orionV2.0.0\n" +
+                        "orionV2.1.0\n" +
                         "本项目基于 GNU General Public License v3.0 发布，不可商用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OrionColors.TextSecondary
@@ -435,4 +503,76 @@ fun SettingsScreen(
             Spacer(Modifier.height(28.dp))
         }
     }
+
+    // 所有「清空」都必须二次确认，避免误触把数据删掉
+    pendingClear?.let { target ->
+        val isHistory = target == ClearTarget.HISTORY
+        ConfirmClearDialog(
+            title = if (isHistory) "清空任务历史？" else "清空自学习？",
+            message = if (isHistory) {
+                "本地数据库里的全部任务与步骤都会被删除，且无法恢复。"
+            } else {
+                "已攒下的全部经验都会被删除，Orion 会退回「从头开始学」。"
+            },
+            confirmText = if (isHistory) "确认清空历史" else "确认清空自学习",
+            onConfirm = {
+                pendingClear = null
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        if (isHistory) app.tasks.clearAll() else app.learning.clearAll()
+                    }
+                    if (!isHistory) {
+                        withContext(Dispatchers.Main) { learningCount = 0 }
+                    }
+                }
+            },
+            onDismiss = { pendingClear = null }
+        )
+    }
+}
+
+/** 待二次确认的清空目标 */
+private enum class ClearTarget { HISTORY, LEARNING }
+
+/** 清空类操作的二次确认弹窗 */
+@Composable
+private fun ConfirmClearDialog(
+    title: String,
+    message: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = OrionColors.TextPrimary
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = OrionColors.TextSecondary
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = confirmText,
+                    color = OrionColors.Danger,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消", color = OrionColors.TextSecondary)
+            }
+        }
+    )
 }

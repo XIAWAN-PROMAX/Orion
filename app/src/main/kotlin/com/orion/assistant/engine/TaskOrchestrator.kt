@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.orion.assistant.data.LearningRepository
 import com.orion.assistant.data.SettingsRepository
 import com.orion.assistant.data.TaskRepository
 import com.orion.assistant.notify.LiveUpdateNotifier
@@ -46,6 +47,7 @@ object TaskOrchestrator {
     private lateinit var appContext: Context
     private lateinit var settings: SettingsRepository
     private lateinit var repository: TaskRepository
+    private lateinit var learning: LearningRepository
     private lateinit var vision: VisionClient
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -99,10 +101,19 @@ object TaskOrchestrator {
 
     private var currentTaskId: Long = -1L
 
-    fun init(context: Context, settings: SettingsRepository, repository: TaskRepository) {
+    /** 当前任务已做过的动作（供任务结束后复盘学习用） */
+    private var runHistory: MutableList<String> = mutableListOf()
+
+    fun init(
+        context: Context,
+        settings: SettingsRepository,
+        repository: TaskRepository,
+        learning: LearningRepository
+    ) {
         appContext = context.applicationContext
         this.settings = settings
         this.repository = repository
+        this.learning = learning
         this.vision = VisionClient(settings)
     }
 
@@ -143,6 +154,7 @@ object TaskOrchestrator {
         resultSummary = ""
         errorMessage = ""
         timeline = emptyList()
+        runHistory = mutableListOf()
         stepIndex = 0
         currentThought = "正在看你的屏幕…"
         currentActionText = ""
@@ -219,6 +231,16 @@ object TaskOrchestrator {
         }
 
         val history = mutableListOf<String>()
+        // 供任务结束后复盘学习用：持有同一个引用，读到的一定是本轮最新动作
+        runHistory = history
+        // 自学习攒下的经验：任务开始时读一次，注入到每一步的提示词里
+        val lessons = if (settings.selfLearning) {
+            withContext(Dispatchers.IO) {
+                runCatching { learning.tips() }.getOrDefault(emptyList())
+            }
+        } else {
+            emptyList()
+        }
         // 模型在第一步列出的整体子目标：每一步都带回给它，防止刚进入某个页面就误判「完成」
         val overallPlan = mutableListOf<String>()
         var step = 0
@@ -274,7 +296,8 @@ object TaskOrchestrator {
                     maxSteps = maxSteps,
                     history = history,
                     screenText = screenText,
-                    overallPlan = overallPlan
+                    overallPlan = overallPlan,
+                    lessons = lessons
                 )
 
                 // 这一步实际执行的动作，用于自适应步间隔
@@ -440,6 +463,40 @@ object TaskOrchestrator {
             TaskStatus.COMPLETED -> pushLiveUpdate("Orion 完成了任务", summary, "已完成", 100, false)
             TaskStatus.STOPPED -> pushLiveUpdate("Orion 已停止", summary, "已停止", stepPercent(), true)
             else -> pushLiveUpdate("Orion 遇到问题", summary, "已中断", stepPercent(), false)
+        }
+
+        learnFrom(finalStatus)
+    }
+
+    /**
+     * 自学习：任务结束后，把这次的动作序列交给模型复盘，攒一条经验（好的 / 不足 / 改进要点），
+     * 下次同类任务时注入提示词。整个过程在后台跑、失败静默，绝不影响任务收尾与界面。
+     */
+    private fun learnFrom(finalStatus: TaskStatus) {
+        if (!settings.selfLearning) return
+        val steps = runHistory.toList()
+        if (steps.isEmpty()) return
+        val text = instruction
+        if (text.isBlank()) return
+
+        val statusLabel = when (finalStatus) {
+            TaskStatus.COMPLETED -> "完成"
+            TaskStatus.STOPPED -> "中途停止"
+            TaskStatus.FAILED -> "失败"
+            else -> finalStatus.name
+        }
+
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val experience = vision.summarizeExperience(text, statusLabel, steps) ?: return@runCatching
+                learning.add(
+                    instruction = text,
+                    status = finalStatus.name,
+                    good = experience.good,
+                    bad = experience.bad,
+                    tip = experience.tip
+                )
+            }
         }
     }
 

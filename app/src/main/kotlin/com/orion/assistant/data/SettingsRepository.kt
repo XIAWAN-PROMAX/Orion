@@ -165,6 +165,14 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean(KEY_SAVE_SHOTS, false)
         set(value) = write { putBoolean(KEY_SAVE_SHOTS, value) }
 
+    /**
+     * 自学习：任务结束后自动复盘这次的好 / 不足，攒成经验，下次执行时注入提示词。
+     * 默认开启；关闭后既不总结也不再注入历史经验。
+     */
+    var selfLearning: Boolean
+        get() = prefs.getBoolean(KEY_SELF_LEARNING, true)
+        set(value) = write { putBoolean(KEY_SELF_LEARNING, value) }
+
     /** 新手引导是否已完成 */
     var onboardingCompleted: Boolean
         get() = prefs.getBoolean(KEY_ONBOARDED, false)
@@ -209,6 +217,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_SPEED = "speed"
         private const val KEY_MAX_STEPS = "max_steps"
         private const val KEY_SAVE_SHOTS = "save_screenshots"
+        private const val KEY_SELF_LEARNING = "self_learning"
         private const val KEY_ONBOARDED = "onboarding_completed"
         private const val KEY_LAST_TASK = "last_instruction"
         private const val KEY_CUSTOM_PROMPT = "custom_prompt"

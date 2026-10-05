@@ -30,7 +30,8 @@ class VisionClient(private val settings: SettingsRepository) {
         maxSteps: Int,
         history: List<String>,
         screenText: String,
-        overallPlan: List<String>
+        overallPlan: List<String>,
+        lessons: List<String> = emptyList()
     ): PlanOutcome = withContext(Dispatchers.IO) {
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) {
@@ -50,7 +51,8 @@ class VisionClient(private val settings: SettingsRepository) {
             maxSteps = maxSteps,
             history = history,
             screenText = screenText,
-            overallPlan = overallPlan
+            overallPlan = overallPlan,
+            lessons = lessons
         )
 
         val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
@@ -93,6 +95,58 @@ class VisionClient(private val settings: SettingsRepository) {
         }
     }
 
+    /**
+     * 自学习复盘：把一次任务的过程交给模型，总结「好的地方 / 不足 / 下次改进要点」。
+     * 纯文本调用（不带截图，省流量）。任何失败都返回 null —— 复盘失败绝不影响主流程。
+     */
+    suspend fun summarizeExperience(
+        instruction: String,
+        status: String,
+        steps: List<String>
+    ): Experience? = withContext(Dispatchers.IO) {
+        val apiKey = settings.apiKey
+        if (apiKey.isBlank()) return@withContext null
+        if (steps.isEmpty()) return@withContext null
+
+        val payload = JSONObject()
+            .put("model", settings.model)
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", LEARNING_SYSTEM))
+                    .put(
+                        JSONObject().put("role", "user")
+                            .put("content", buildLearningUser(instruction, status, steps))
+                    )
+            )
+            .put("temperature", 0.3)
+            .put("max_tokens", 512)
+            .put("stream", false)
+            .toString()
+
+        val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
+        val raw = try {
+            runInterruptible { postJson(endpoint, apiKey, payload) }
+        } catch (e: IOException) {
+            return@withContext null
+        } catch (t: Throwable) {
+            return@withContext null
+        }
+        parseExperience(raw)
+    }
+
+    private fun buildLearningUser(instruction: String, status: String, steps: List<String>): String {
+        val sb = StringBuilder()
+        sb.append("任务指令：").append(instruction.trim()).append('\n')
+        sb.append("结束状态：").append(status).append('\n')
+        sb.append("执行过程（按先后顺序）：\n")
+        steps.takeLast(30).forEachIndexed { index, item ->
+            sb.append("  ").append(index + 1).append(". ").append(item).append('\n')
+        }
+        sb.append("\n请复盘这次任务，按约定输出 JSON。")
+        return sb.toString()
+    }
+
     // ------------------------------------------------------------------ 请求
 
     private fun buildRequestBody(
@@ -102,7 +156,8 @@ class VisionClient(private val settings: SettingsRepository) {
         maxSteps: Int,
         history: List<String>,
         screenText: String,
-        overallPlan: List<String>
+        overallPlan: List<String>,
+        lessons: List<String>
     ): String {
         val userParts = JSONArray()
             .put(
@@ -122,7 +177,10 @@ class VisionClient(private val settings: SettingsRepository) {
             )
 
         val messages = JSONArray()
-            .put(JSONObject().put("role", "system").put("content", OrionPrompt.system(settings.customPrompt)))
+            .put(
+                JSONObject().put("role", "system")
+                    .put("content", OrionPrompt.system(settings.customPrompt, lessons))
+            )
             .put(JSONObject().put("role", "user").put("content", userParts))
 
         return JSONObject()
@@ -212,6 +270,25 @@ class VisionClient(private val settings: SettingsRepository) {
         return sb.toString()
     }
 
+    /** 解析复盘结果；任一字段有内容即可，全空按失败处理 */
+    private fun parseExperience(raw: String): Experience? {
+        val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        val choices = root.optJSONArray("choices") ?: return null
+        if (choices.length() == 0) return null
+        val content = extractContent(choices.getJSONObject(0).optJSONObject("message"))
+        if (content.isBlank()) return null
+        val json = extractJsonObject(content) ?: return null
+        val good = cleanLine(json.optString("good"))
+        val bad = cleanLine(json.optString("bad"))
+        val tip = cleanLine(json.optString("tip"))
+        if (good.isEmpty() && bad.isEmpty() && tip.isEmpty()) return null
+        return Experience(good = good, bad = bad, tip = tip)
+    }
+
+    /** 统一成单行短句，并限制长度，避免经验越攒越长把提示词撑爆 */
+    private fun cleanLine(text: String): String =
+        text.trim().trim('"').replace('\n', ' ').replace(Regex("\\s+"), " ").take(160)
+
     /** 从模型输出里抠出第一个完整的 JSON 对象（兼容 ```json 代码块、前后废话） */
     private fun extractJsonObject(text: String): JSONObject? {
         val start = text.indexOf('{')
@@ -291,5 +368,26 @@ class VisionClient(private val settings: SettingsRepository) {
     private companion object {
         /** 送给模型前先把截图缩到这个边长。做题要读小字，清晰度优先；卡顿根因已挪到后台线程 */
         const val MAX_IMAGE_EDGE = 1440
+
+        /** 自学习复盘的系统提示词：只让它产出可执行的改进要点 */
+        val LEARNING_SYSTEM = """
+你是 Orion（手机操作助手）的复盘助手。会给你一次任务的指令、结束状态，以及它按顺序做过的动作。
+请客观复盘，帮它下次面对同类任务做得更快、更准。只输出严格 JSON，不要 markdown、不要多余文字：
+{
+  "good": "这次做得好的地方，一句话，没有就留空",
+  "bad": "这次不足 / 卡住 / 绕远的地方，一句话，没有就留空",
+  "tip": "下次同类任务的改进要点，一句话，必须具体、可执行"
+}
+要求：
+- tip 面向下一次执行，写成能直接照做的短句，例如「答题 App 选完选项后记得点『检查 / 继续』」。
+- 不要空话（避免「要更细心」这类），每条 60 字以内。
+""".trimIndent()
     }
 }
+
+/** 一次自学习复盘的结果 */
+data class Experience(
+    val good: String,
+    val bad: String,
+    val tip: String
+)
