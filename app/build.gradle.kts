@@ -12,9 +12,9 @@ android {
         applicationId = "com.orion.assistant"
         minSdk = 33
         targetSdk = 36
-        versionCode = 16
+        versionCode = 17
         // versionCode 必须比上一版大才能覆盖安装
-        versionName = "2.1"
+        versionName = "2.2"
         vectorDrawables { useSupportLibrary = true }
     }
 

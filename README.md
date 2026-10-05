@@ -14,7 +14,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin\&logoColor=white)](https://kotlinlang.org/)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose\&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.1-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
+[![Version](https://img.shields.io/badge/version-2.2-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
 
 </div>
 
@@ -156,7 +156,7 @@ Orion 会在**每次任务结束后自动复盘**：这一次哪些做得好、�
 
 **方式一 · 直接装 APK**（只想用的同学看这里）
 
-到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.1.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
+到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.2.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
 
 **方式二 · 从源码自己编译**（见下方「快速开始」）
 
@@ -332,20 +332,24 @@ systemProp.https.proxyPort=7890
 
 ## 更新日志
 
-### v2.1
+### v2.2
 
 **新增**
 
 - **自学习**：每次任务结束后自动复盘这次「做得好的 / 不足的 / 下次怎么改」，攒成经验；下次执行同类任务时自动注入提示词，越用越顺手。开关在「设置 → 智能体行为 → 自学习」，旁边一颗渐变小星 ✦。
 - **清空自学习**：「设置 → 数据与隐私」新增入口，可一键清空已攒下的全部经验。
 - **清空统一二次确认**：清空任务历史 / 清空自学习都必须再确认一次，防误触。
-- 版本号提升至 **2.1**（versionCode 16），「关于」页同步显示 `orionV2.1.0`。
+- 版本号提升至 **2.2**（versionCode 17），「关于」页同步显示 `orionV2.2.0`。
 
 **修复**
 
-- **「一直点自己的命令」**：任务是在 Orion 自己的界面里发起的，画面还停在首页（上面写着用户那句指令），引擎却直接对着它截图分析，模型就把「指令文字」当成按钮反复点。现在开跑前若发现前台是 Orion 自己，会先退回桌面；同时读屏幕文字时会跳过 Orion 自身的界面节点，指令文字不再进入模型视野。
+- **「一直点自己的命令」**：任务是在 Orion 自己的界面里发起的，画面还停在首页（上面写着用户那句指令），引擎却直接对着它截图分析，模型就把「指令文字」当成按钮反复点。现在开跑前若发现前台是 Orion 自己，会先退回桌面并**确认画面真的切走**（最多约 2.4 秒）再截屏；读屏幕文字 / 按文字找坐标 / 找输入框时全部跳过 Orion 自身的节点，指令文字不再进入模型视野，也不会被当成目标输入框。
 - **「打开小管家，结果开了手机管家」**：`open_app` 找不到应用时，模型会自己换个名字相近的 App 打开。现在找不到会把**名字相近的已安装应用**列出来让模型照着候选重试，并在提示词里明确禁止「换成别的应用」，宁可停下来说找不到。
 - **名称匹配收紧**：两字词的包含匹配（如「管家」匹到「手机管家」）不再被接受，避免张冠李戴。
+
+### v2.1
+
+- 版本号提升至 **2.1**（versionCode 13）。
 
 ### v2.0
 
@@ -384,7 +388,7 @@ Orion 会**真的替你操作手机**。它并不完美，也可能点错地方�
 
 <div align="center">
 
-**Orion v2.1**
+**Orion v2.2**
 
 xiawan 开发
 
