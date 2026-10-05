@@ -250,6 +250,14 @@ object TaskOrchestrator {
         // 这类动作执行了也等于没做，绝不能让它们当成进度一步步混过去。
         var noopStreak = 0
 
+        // 任务是从 Orion 自己的界面里发起的：此刻画面还是 Orion 首页，上面写着用户那句指令。
+        // 直接截屏分析的话，模型会把「指令文字」当成可点按钮，一直点自己的命令。
+        // 先退回桌面，保证第一次看到的是真实的目标界面。
+        if (OrionAccessibilityService.current?.currentPackageName() == appContext.packageName) {
+            OrionAccessibilityService.current?.pressHome()
+            delay(600)
+        }
+
         try {
             while (step < maxSteps) {
                 if (stopRequested) {

@@ -343,7 +343,17 @@ class OrionAccessibilityService : AccessibilityService() {
         val q = query.trim()
         if (q.isEmpty()) return "打开应用失败：应用名为空"
 
-        val pkg = resolvePackage(q) ?: return "没找到叫「$q」的应用"
+        val pkg = resolvePackage(q) ?: run {
+            // 找不到时把名字相近的已安装应用列出来，让模型照着候选重试，
+            // 而不是自己随便换个相似的 App 打开（曾出现「小管家」被换成「手机管家」）。
+            val similar = similarAppLabels(q)
+            return if (similar.isEmpty()) {
+                "没找到叫「$q」的应用"
+            } else {
+                "没找到叫「$q」的应用。已安装名称相近的有：${similar.joinToString("、")}；" +
+                    "如果要打开的是其中之一，请用它的准确名称重新 open_app，不要换成别的应用。"
+            }
+        }
         val intent = packageManager.getLaunchIntentForPackage(pkg)
             ?: return "「$q」没有可启动的入口（$pkg）"
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
@@ -378,12 +388,16 @@ class OrionAccessibilityService : AccessibilityService() {
         for (info in activities) {
             val label = runCatching { info.loadLabel(packageManager).toString() }.getOrDefault("")
             val pkg = info.activityInfo?.packageName ?: continue
+            // 名称包含式的匹配要足够贴合，否则「管家」这种两字词会匹到「手机管家」，
+            // 把用户要的小程序 / 别的应用张冠李戴地打开。要求：查询词够长，或候选名不比它长太多。
+            val looseOk = query.length >= 3 || label.length <= query.length + 1
             val score = when {
                 label.equals(query, ignoreCase = true) -> 100
                 pkg.equals(query, ignoreCase = true) -> 95
-                label.contains(query, ignoreCase = true) -> 80
-                pkg.contains(query, ignoreCase = true) -> 60
-                query.contains(label, ignoreCase = true) && label.length >= 2 -> 50
+                label.startsWith(query, ignoreCase = true) && query.length >= 2 -> 85
+                label.contains(query, ignoreCase = true) && query.length >= 2 && looseOk -> 70
+                pkg.contains(query, ignoreCase = true) && query.length >= 3 -> 55
+                query.contains(label, ignoreCase = true) && label.length >= 3 -> 45
                 else -> 0
             }
             if (score > bestScore) {
@@ -397,6 +411,33 @@ class OrionAccessibilityService : AccessibilityService() {
     private fun hasLaunchEntry(pkg: String): Boolean =
         runCatching { packageManager.getLaunchIntentForPackage(pkg) != null }.getOrDefault(false)
 
+    /** 名字相近的已安装应用（按与查询词的重合字数排序），用于 open_app 失败时给模型纠错 */
+    private fun similarAppLabels(query: String, limit: Int = 5): List<String> {
+        val chars = query.trim().toSet()
+        if (chars.isEmpty()) return emptyList()
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val activities = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.queryIntentActivities(
+                    launcherIntent,
+                    PackageManager.ResolveInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.queryIntentActivities(launcherIntent, 0)
+            }
+        }.getOrDefault(emptyList())
+        return activities
+            .map { runCatching { it.loadLabel(packageManager).toString() }.getOrDefault("") }
+            .filter { it.isNotBlank() && it != query.trim() }
+            .map { label -> label to label.count { it in chars } }
+            .filter { (_, hits) -> hits >= 2 }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .distinct()
+            .take(limit)
+    }
+
     /** 通过 alpha / bounds 拿到界面上的文字（辅助模型理解，可选能力） */
     fun screenTextSnippet(limit: Int = 40): String {
         val root = rootInActiveWindow ?: return ""
@@ -407,6 +448,8 @@ class OrionAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty() && visited < 500 && out.size < limit) {
             val node = queue.removeFirst()
             visited++
+            // 跳过 Orion 自己的界面节点：那上面写着用户那句指令，喂给模型只会让它去点自己的命令
+            if (node.packageName?.toString() == packageName) continue
             val text = node.text?.toString()?.trim().orEmpty()
             if (text.isNotEmpty() && text.length in 1..80) out.add(text)
             for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
@@ -437,6 +480,8 @@ class OrionAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty() && visited < 400 && out.size < limit) {
             val node = queue.removeFirst()
             visited++
+            // 跳过 Orion 自己的界面节点：那上面写着用户那句指令，喂给模型只会让它去点自己的命令
+            if (node.packageName?.toString() == packageName) continue
             val raw = (node.text ?: node.contentDescription)?.toString()
                 ?.replace('\n', ' ')?.trim().orEmpty()
             // 跳过整段正文：长文本截前 24 字会被当成「可点标签」，反而误导模型。
@@ -464,6 +509,7 @@ class OrionAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty() && visited < 800) {
             val node = queue.removeFirst()
             visited++
+            if (node.packageName?.toString() == packageName) continue
             val label = (node.text ?: node.contentDescription)?.toString().orEmpty()
             if (label.contains(text, ignoreCase = true)) {
                 val bounds = Rect().also { node.getBoundsInScreen(it) }
