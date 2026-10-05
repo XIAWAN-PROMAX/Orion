@@ -251,12 +251,8 @@ object TaskOrchestrator {
         var noopStreak = 0
 
         // 任务是从 Orion 自己的界面里发起的：此刻画面还是 Orion 首页，上面写着用户那句指令。
-        // 直接截屏分析的话，模型会把「指令文字」当成可点按钮，一直点自己的命令。
-        // 先退回桌面，保证第一次看到的是真实的目标界面。
-        if (OrionAccessibilityService.current?.currentPackageName() == appContext.packageName) {
-            OrionAccessibilityService.current?.pressHome()
-            delay(600)
-        }
+        // 不先离开，模型就会把「指令文字」当成可点按钮，一直点自己的命令。
+        leaveOwnAppIfNeeded()
 
         try {
             while (step < maxSteps) {
@@ -474,6 +470,21 @@ object TaskOrchestrator {
         }
 
         learnFrom(finalStatus)
+    }
+
+    /**
+     * 如果当前前台就是 Orion 自己，先退回桌面，并确认画面真的切走了再继续。
+     * 否则第一张截图还是 Orion 首页（上面写着用户那句指令），模型会去点那句指令。
+     */
+    private suspend fun leaveOwnAppIfNeeded() {
+        val service = OrionAccessibilityService.current ?: return
+        if (service.currentPackageName() != appContext.packageName) return
+        service.pressHome()
+        // 等画面真正切走（最多约 2.4 秒），避免截到「还没刷新」的 Orion 界面
+        repeat(8) {
+            delay(300)
+            if (service.currentPackageName() != appContext.packageName) return
+        }
     }
 
     /**

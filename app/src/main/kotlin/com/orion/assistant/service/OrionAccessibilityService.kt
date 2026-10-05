@@ -307,9 +307,12 @@ class OrionAccessibilityService : AccessibilityService() {
 
         val out = ArrayList<AccessibilityNodeInfo>()
         for (root in roots) {
+            // 别把 Orion 自己的输入框（首页那句指令的输入框）当成目标框
+            if (root.packageName?.toString() == packageName) continue
             root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let(out::add)
         }
         for (root in roots) {
+            if (root.packageName?.toString() == packageName) continue
             findFirstEditable(root)?.let(out::add)
         }
         return out
@@ -325,6 +328,8 @@ class OrionAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty() && visited < 600) {
             val node = queue.removeFirst()
             visited++
+            // 别把 Orion 自己的输入框（首页那句指令的输入框）当成目标框
+            if (node.packageName?.toString() == packageName) continue
             if (node.isEditable && node.isEnabled) return node
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let(queue::addLast)
