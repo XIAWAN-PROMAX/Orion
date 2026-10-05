@@ -493,7 +493,7 @@ fun SettingsScreen(
             GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "xiawan开发\n" +
-                        "orionV2.2.0\n" +
+                        "orionV2.3.0\n" +
                         "本项目基于 GNU General Public License v3.0 发布，不可商用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OrionColors.TextSecondary

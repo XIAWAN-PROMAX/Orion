@@ -14,7 +14,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin\&logoColor=white)](https://kotlinlang.org/)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose\&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.2-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
+[![Version](https://img.shields.io/badge/version-2.3-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
 
 </div>
 
@@ -156,7 +156,7 @@ Orion 会在**每次任务结束后自动复盘**：这一次哪些做得好、�
 
 **方式一 · 直接装 APK**（只想用的同学看这里）
 
-到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.2.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
+到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.3.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
 
 **方式二 · 从源码自己编译**（见下方「快速开始」）
 
@@ -332,6 +332,16 @@ systemProp.https.proxyPort=7890
 
 ## 更新日志
 
+### v2.3
+
+**修复**
+
+- **「打开小管家，却开了手机管家 / 只会在桌面滑着找」**：根因是它没走 `open_app`，而是回桌面去点图标——「手机管家」里带个「管家」，就被当成目标点下去了。
+  - `open_app` 现在**按名字直接查应用并启动**：同时用「桌面条目名」和「应用自身名」两路打分，能处理「入口名 ≠ 应用名」的情况；会自动去掉「打开 / 启动」这类动词，也能吃下用户写得更长或更短的名字（如「班级小管家」→「小管家」）。
+  - 提示词明确要求：打开 App 一律走 `open_app`，**禁止**回桌面 / 应用列表滑屏翻图标去点；找不到时用返回的候选名重试，不许换成名字相近的别的 App。
+  - `QUERY_ALL_PACKAGES` 保证能看见手机上所有应用。
+- 版本号提升至 **2.3**（versionCode 18），「关于」页同步显示 `orionV2.3.0`。
+
 ### v2.2
 
 **新增**
@@ -388,7 +398,7 @@ Orion 会**真的替你操作手机**。它并不完美，也可能点错地方�
 
 <div align="center">
 
-**Orion v2.2**
+**Orion v2.3**
 
 xiawan 开发
 

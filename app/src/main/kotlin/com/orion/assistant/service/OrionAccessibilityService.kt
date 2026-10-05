@@ -345,7 +345,7 @@ class OrionAccessibilityService : AccessibilityService() {
      * 返回结果描述，写进任务日志。
      */
     fun openApp(query: String): String {
-        val q = query.trim()
+        val q = normalizeAppQuery(query)
         if (q.isEmpty()) return "打开应用失败：应用名为空"
 
         val pkg = resolvePackage(q) ?: run {
@@ -353,10 +353,11 @@ class OrionAccessibilityService : AccessibilityService() {
             // 而不是自己随便换个相似的 App 打开（曾出现「小管家」被换成「手机管家」）。
             val similar = similarAppLabels(q)
             return if (similar.isEmpty()) {
-                "没找到叫「$q」的应用"
+                "没找到叫「$q」的应用。请不要去桌面点相似的图标，改为 finish 让用户确认应用名。"
             } else {
                 "没找到叫「$q」的应用。已安装名称相近的有：${similar.joinToString("、")}；" +
-                    "如果要打开的是其中之一，请用它的准确名称重新 open_app，不要换成别的应用。"
+                    "如果要打开的是其中之一，请用它的准确名称重新 open_app；" +
+                    "绝对不要去桌面点相似的图标，也不要换成别的应用。"
             }
         }
         val intent = packageManager.getLaunchIntentForPackage(pkg)
@@ -368,13 +369,20 @@ class OrionAccessibilityService : AccessibilityService() {
         }.getOrElse { "打开「$q」失败：${it.message}" }
     }
 
-    private fun resolvePackage(query: String): String? {
-        // 1) 直接就是包名
-        if (hasLaunchEntry(query)) return query
-        // 2) 命中内置别名 / 用户自定义别名
-        aliasMap()[query.trim()]?.let { if (hasLaunchEntry(it)) return it }
+    /** 去掉「打开 / 启动 / 进入」这类动词，模型偶尔会把它们一起塞进应用名 */
+    private fun normalizeAppQuery(raw: String): String =
+        raw.trim()
+            .removePrefix("打开")
+            .removePrefix("启动")
+            .removePrefix("进入")
+            .removePrefix("运行")
+            .removeSuffix("App")
+            .removeSuffix("APP")
+            .removeSuffix("app")
+            .trim()
 
-        // 3) 在所有已安装应用里按「名称包含」打分
+    /** 有桌面入口（可启动）的包名集合 */
+    private fun launchablePackages(): Set<String> {
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val activities = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -387,22 +395,39 @@ class OrionAccessibilityService : AccessibilityService() {
                 packageManager.queryIntentActivities(launcherIntent, 0)
             }
         }.getOrDefault(emptyList())
+        return activities.mapNotNull { it.activityInfo?.packageName }.toSet()
+    }
+
+    /**
+     * 按名称「查应用」并给出包名。
+     *
+     * 两路候选一起打分，尽量贴近用户眼里看到的那个名字：
+     *  1. 桌面条目（launcher activity）的显示名；
+     *  2. 应用自身的显示名（有些 App 的启动入口名和用户看到的名字不一致）。
+     * 匹配要足够贴合，否则「管家」这种两字词会匹到「手机管家」，把别的 App 张冠李戴地打开。
+     */
+    private fun resolvePackage(query: String): String? {
+        val q = query.trim()
+        if (q.isEmpty()) return null
+        // 1) 直接就是包名
+        if (hasLaunchEntry(q)) return q
+        // 2) 命中内置别名 / 用户自定义别名
+        aliasMap()[q]?.let { if (hasLaunchEntry(it)) return it }
 
         var bestPkg: String? = null
         var bestScore = 0
-        for (info in activities) {
-            val label = runCatching { info.loadLabel(packageManager).toString() }.getOrDefault("")
-            val pkg = info.activityInfo?.packageName ?: continue
-            // 名称包含式的匹配要足够贴合，否则「管家」这种两字词会匹到「手机管家」，
-            // 把用户要的小程序 / 别的应用张冠李戴地打开。要求：查询词够长，或候选名不比它长太多。
-            val looseOk = query.length >= 3 || label.length <= query.length + 1
+        fun consider(label: String, pkg: String) {
+            if (label.isBlank()) return
+            // 名称包含式的匹配要足够贴合：查询词够长，或候选名不比它长太多
+            val looseOk = q.length >= 3 || label.length <= q.length + 1
             val score = when {
-                label.equals(query, ignoreCase = true) -> 100
-                pkg.equals(query, ignoreCase = true) -> 95
-                label.startsWith(query, ignoreCase = true) && query.length >= 2 -> 85
-                label.contains(query, ignoreCase = true) && query.length >= 2 && looseOk -> 70
-                pkg.contains(query, ignoreCase = true) && query.length >= 3 -> 55
-                query.contains(label, ignoreCase = true) && label.length >= 3 -> 45
+                label.equals(q, ignoreCase = true) -> 100
+                pkg.equals(q, ignoreCase = true) -> 95
+                label.startsWith(q, ignoreCase = true) && q.length >= 2 -> 90
+                label.contains(q, ignoreCase = true) && q.length >= 2 && looseOk -> 75
+                // 用户把名字写得更完整，例如「班级小管家」→「小管家」
+                q.contains(label, ignoreCase = true) && label.length >= 3 -> 60
+                pkg.contains(q, ignoreCase = true) && q.length >= 3 -> 55
                 else -> 0
             }
             if (score > bestScore) {
@@ -410,6 +435,36 @@ class OrionAccessibilityService : AccessibilityService() {
                 bestPkg = pkg
             }
         }
+
+        // 1) 桌面条目名（用户最可能照着自己看到的名字说）
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val activities = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.queryIntentActivities(
+                    launcherIntent,
+                    PackageManager.ResolveInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.queryIntentActivities(launcherIntent, 0)
+            }
+        }.getOrDefault(emptyList())
+        for (info in activities) {
+            val pkg = info.activityInfo?.packageName ?: continue
+            val label = runCatching { info.loadLabel(packageManager).toString() }.getOrDefault("")
+            consider(label, pkg)
+        }
+
+        // 2) 应用自身的显示名（补上「入口名 ≠ 应用名」的情况）
+        val launchable = launchablePackages()
+        runCatching { packageManager.getInstalledApplications(0) }.getOrDefault(emptyList())
+            .forEach { app ->
+                val pkg = app.packageName
+                if (pkg !in launchable) return@forEach
+                val label = runCatching { app.loadLabel(packageManager).toString() }.getOrDefault("")
+                consider(label, pkg)
+            }
+
         return bestPkg
     }
 
