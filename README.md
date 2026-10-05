@@ -2,7 +2,7 @@
 
 <img src="assets/banner.gif" alt="Orion — 通用 AI 手机操作助手" width="860" />
 
-<br/>
+<br />
 
 <img src="assets/icon.png" alt="Orion icon" width="88" />
 
@@ -10,15 +10,15 @@
 
 **通用 AI 手机操作助手 · 说一句话，它替你操作手机**
 
-[![Android](https://img.shields.io/badge/Android-13%2B-3DDC84?logo=android&logoColor=white)](https://www.android.com/)
-[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
-[![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Android](https://img.shields.io/badge/Android-13%2B-3DDC84?logo=android\&logoColor=white)](https://www.android.com/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin\&logoColor=white)](https://kotlinlang.org/)
+[![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose\&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.0-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
+[![Version](https://img.shields.io/badge/version-2.1-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
 
 </div>
 
----
+***
 
 ## 目录
 
@@ -39,7 +39,7 @@
 - [注意事项](#注意事项)
 - [许可证](#许可证)
 
----
+***
 
 ## 这是什么
 
@@ -51,21 +51,21 @@ Orion 把手机变成会自己动手的助手。
 
 > 例：*「打开美团，搜一下附近评分最高的川菜馆」* —— 剩下的交给 Orion。
 
----
+***
 
 ## 它能做什么
 
-| 能力 | 说明 |
-| --- | --- |
-| 看懂屏幕 | 截图交给多模态大模型，识别当前是哪个 App、哪一页、该点哪里 |
-| 替你动手 | 通过无障碍服务执行点击、长按、滑动、滚动、文字输入、返回 / 回桌面 / 多任务 |
-| 实时解说 | 每一步的「想法」和进度，实时显示在灵动岛（实况通知）上 |
-| 随时可控 | 一键暂停 / 停止，停止立即生效；碰到付款、下单等操作会先停下来问你 |
-| 模型可换 | 内置豆包视觉、Qwen-VL，也支持任意 OpenAI 兼容的视觉模型 |
-| 密钥加密 | API Key 用 `EncryptedSharedPreferences` 加密落盘，密钥托管在 Android Keystore |
-| 自定义提示词 | 追加自己的做事习惯，例如「涉及付款先停下来问我」 |
+| 能力     | 说明                                                                 |
+| ------ | ------------------------------------------------------------------ |
+| 看懂屏幕   | 截图交给多模态大模型，识别当前是哪个 App、哪一页、该点哪里                                    |
+| 替你动手   | 通过无障碍服务执行点击、长按、滑动、滚动、文字输入、返回 / 回桌面 / 多任务                           |
+| 实时解说   | 每一步的「想法」和进度，实时显示在灵动岛（实况通知）上                                        |
+| 随时可控   | 一键暂停 / 停止，停止立即生效；碰到付款、下单等操作会先停下来问你                                 |
+| 模型可换   | 内置豆包视觉、Qwen-VL，也支持任意 OpenAI 兼容的视觉模型                                |
+| 密钥加密   | API Key 用 `EncryptedSharedPreferences` 加密落盘，密钥托管在 Android Keystore |
+| 自定义提示词 | 追加自己的做事习惯，例如「涉及付款先停下来问我」                                           |
 
----
+***
 
 ## 它是怎么干活的
 
@@ -87,7 +87,7 @@ flowchart LR
 
 一个任务的每一步，AI 都会输出一段 `thought`（它在想什么）和一个 `action`（它要做什么），二者都会写进首页时间线。
 
----
+***
 
 ## 灵动岛：实时显示它的想法
 
@@ -97,18 +97,18 @@ flowchart LR
 
 任务一旦开始，实况通知（Android 16 Live Updates / 灵动岛）会常驻显示**当前进度**、**AI 的实时解说**和**正在执行的动作**。不用一直盯着 App，扫一眼就知道它干到哪了。
 
----
+***
 
 ## 智能节奏：自己拿捏快慢
 
 Orion 每做完一步会停一下，等页面稳定了再看下一眼。停多久，可以在「设置 → 操作节奏 → 每步之间的间隔」里选：
 
-| 档位 | 节奏 | 适合 |
-| --- | --- | --- |
-| **智能** ✦ | 260ms ~ 2s，按画面复杂度自动浮动 | 拿不准就选它 |
-| 沉稳 | 每步 1.2 ~ 2.0 秒 | 填表单、怕点错 |
-| 标准 | 每步 0.6 ~ 1.1 秒 | 日常通用 |
-| 轻快 | 每步 0.25 ~ 0.55 秒 | 刷内容、翻页 |
+| 档位       | 节奏                     | 适合      |
+| -------- | ---------------------- | ------- |
+| **智能** ✦ | 260ms \~ 2s，按画面复杂度自动浮动 | 拿不准就选它  |
+| 沉稳       | 每步 1.2 \~ 2.0 秒        | 填表单、怕点错 |
+| 标准       | 每步 0.6 \~ 1.1 秒        | 日常通用    |
+| 轻快       | 每步 0.25 \~ 0.55 秒      | 刷内容、翻页  |
 
 选「智能」时，Orion 会数一数当前屏幕上有多少文字、内容有多密，自己决定这一步之后该停多久：
 
@@ -118,35 +118,35 @@ Orion 每做完一步会停一下，等页面稳定了再看下一眼。停多�
 
 简单说：该快的时候快，该等的时候等，不用你自己调。设置里带那颗**渐变小星** ✦ 的档位，就是它。
 
----
+***
 
 ## 支持的动作
 
-模型输出的动作统一使用 **0~1000 的归一化坐标**，与屏幕分辨率解耦，落地时再按真实分辨率换算。
+模型输出的动作统一使用 **0\~1000 的归一化坐标**，与屏幕分辨率解耦，落地时再按真实分辨率换算。
 
-| `type` | 含义 |
-| --- | --- |
-| `tap` / `click` | 点击坐标 |
-| `long_press` | 长按（300~3000ms） |
-| `swipe` / `drag` | 滑动 / 拖拽 |
-| `scroll` | 按方向滚动 |
-| `input_text` / `input` | 在输入框里输入文字 |
-| `open_app` | 打开指定 App |
-| `back` / `home` / `recents` | 返回 / 回桌面 / 多任务 |
-| `wait` | 等待画面加载 |
-| `finish` | 任务结束并给出总结 |
+| `type`                      | 含义              |
+| --------------------------- | --------------- |
+| `tap` / `click`             | 点击坐标            |
+| `long_press`                | 长按（300\~3000ms） |
+| `swipe` / `drag`            | 滑动 / 拖拽         |
+| `scroll`                    | 按方向滚动           |
+| `input_text` / `input`      | 在输入框里输入文字       |
+| `open_app`                  | 打开指定 App        |
+| `back` / `home` / `recents` | 返回 / 回桌面 / 多任务  |
+| `wait`                      | 等待画面加载          |
+| `finish`                    | 任务结束并给出总结       |
 
----
+***
 
 ## 下载安装
 
 **方式一 · 直接装 APK**（只想用的同学看这里）
 
-到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.0.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
+到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.1.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
 
 **方式二 · 从源码自己编译**（见下方「快速开始」）
 
----
+***
 
 ## 快速开始
 
@@ -183,21 +183,21 @@ cd Orion
 5. 到「设置」里选好模型、填入 API Key，点「测试连接」。
 6. 回到首页，说出你的指令，开始。
 
----
+***
 
 ## 支持的模型
 
 三者都是 **OpenAI 兼容的 `POST {baseUrl}/chat/completions`** 接口，一套代码通吃。
 
-| 供应商 | 默认 Base URL | 默认模型 |
-| --- | --- | --- |
-| 豆包视觉 · 火山方舟 | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-1.5-vision-pro-32k` |
-| 通义千问 Qwen-VL · 阿里云百炼 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-vl-max-latest` |
-| 自定义 | 自行填写 | 任意 OpenAI 兼容视觉模型（如 `gpt-4o`、自建网关） |
+| 供应商                  | 默认 Base URL                                         | 默认模型                              |
+| -------------------- | --------------------------------------------------- | --------------------------------- |
+| 豆包视觉 · 火山方舟          | `https://ark.cn-beijing.volces.com/api/v3`          | `doubao-1.5-vision-pro-32k`       |
+| 通义千问 Qwen-VL · 阿里云百炼 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-vl-max-latest`              |
+| 自定义                  | 自行填写                                                | 任意 OpenAI 兼容视觉模型（如 `gpt-4o`、自建网关） |
 
 > 想接入新的模型供应商，只需在 `ModelProvider` 枚举里加一项，其余代码无需改动。
 
----
+***
 
 ## 隐私与安全
 
@@ -205,7 +205,7 @@ cd Orion
 - **截图默认不落盘**：屏幕截图只在内存中处理后发给你所选的模型服务；可在设置里按需开启本地留存，方便排查。
 - **数据去向由你决定**：Orion 只与你配置的模型服务通信，不经过任何第三方服务器。
 
----
+***
 
 ## 技术栈
 
@@ -216,7 +216,7 @@ cd Orion
 - **androidx.security-crypto** — 加密偏好存储
 - AGP 8.13 · compileSdk 36 · minSdk 33 · target 36 · JDK 17
 
----
+***
 
 ## 项目结构
 
@@ -254,7 +254,7 @@ com.orion.assistant
 └── ui/                     # Compose 界面（首页 / 设置 / 历史 / 引导）
 ```
 
----
+***
 
 ## 常见问题解决
 
@@ -314,9 +314,13 @@ systemProp.https.proxyPort=7890
 
 只在你说「开始」后才动手，任何时候都能暂停 / 停止；碰到付款、下单、发送消息这类不可逆操作会先停下来问你。初次使用建议从可逆的简单任务（打开 App、搜索、翻页）开始。
 
----
+***
 
 ## 更新日志
+
+### v2.1
+
+- 版本号提升至 **2.1**（versionCode 13），「关于」页同步显示 `orionV2.1.0`。
 
 ### v2.0
 
@@ -337,7 +341,7 @@ systemProp.https.proxyPort=7890
 - **应用被杀后带空 intent 重启崩溃**：截屏前台服务改为不自动重启。
 - **提示词纠正**：答案必须落到动作上，只描述、不执行视为无效。
 
----
+***
 
 ## 注意事项
 
@@ -347,7 +351,7 @@ Orion 会**真的替你操作手机**。它并不完美，也可能点错地方�
 - 涉及**付款、下单、发送消息**等不可逆操作时，请务必盯住屏幕，确认后再继续。
 - 请遵守各 App 的服务条款，不要用它进行刷单、抢购等违规操作。
 
----
+***
 
 ## 许可证
 
@@ -355,7 +359,7 @@ Orion 会**真的替你操作手机**。它并不完美，也可能点错地方�
 
 <div align="center">
 
-**Orion v2.0**
+**Orion v2.1**
 
 xiawan 开发
 
