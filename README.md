@@ -14,7 +14,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin\&logoColor=white)](https://kotlinlang.org/)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose\&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.3-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
+[![Version](https://img.shields.io/badge/version-2.4-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
 
 </div>
 
@@ -156,7 +156,7 @@ Orion 会在**每次任务结束后自动复盘**：这一次哪些做得好、�
 
 **方式一 · 直接装 APK**（只想用的同学看这里）
 
-到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.3.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
+到 [Releases](https://github.com/XIAWAN-PROMAX/Orion/releases) 下载最新版 `Orion-2.4.apk`，传到手机点安装即可（首次需要允许「安装未知来源应用」）。
 
 **方式二 · 从源码自己编译**（见下方「快速开始」）
 
@@ -331,6 +331,13 @@ systemProp.https.proxyPort=7890
 ***
 
 ## 更新日志
+
+### v2.4
+
+**新增**
+
+- **自学习数据**：「设置 → 数据与隐私」第二行新增入口，点开进入二级页面，把攒下的经验一条条以卡片形式列出（任务指令、结果状态、做得好的 / 待改进 / 改进要点、时间），配合「自学习」开关查看 Orion 到底学到了什么。
+- 版本号提升至 **2.4**（versionCode 19），「关于」页同步显示 `orionV2.4.0`。
 
 ### v2.3
 

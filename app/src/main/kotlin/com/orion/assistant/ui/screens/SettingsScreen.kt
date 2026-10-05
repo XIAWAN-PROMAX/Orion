@@ -1,5 +1,7 @@
 package com.orion.assistant.ui.screens
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +15,11 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -36,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -67,7 +72,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen(
     backdrop: Backdrop,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenLearningData: () -> Unit
 ) {
     val context = LocalContext.current
     val app = context.orionApp
@@ -436,6 +442,45 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(18.dp))
 
+                // 自学习数据：点开进入二级页面，一条条查看攒下的经验
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onOpenLearningData
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "自学习数据",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = OrionColors.TextPrimary
+                            )
+                            GradientStar()
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "查看已攒下的经验记录（当前 $learningCount 条）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OrionColors.TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = OrionColors.TextTertiary,
+                        modifier = Modifier.width(20.dp).height(20.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -493,7 +538,7 @@ fun SettingsScreen(
             GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "xiawan开发\n" +
-                        "orionV2.3.0\n" +
+                        "orionV2.4.0\n" +
                         "本项目基于 GNU General Public License v3.0 发布，不可商用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OrionColors.TextSecondary

@@ -30,6 +30,7 @@ import com.orion.assistant.service.ScreenCaptureService
 import com.orion.assistant.ui.components.OrionBackground
 import com.orion.assistant.ui.screens.HistoryScreen
 import com.orion.assistant.ui.screens.HomeScreen
+import com.orion.assistant.ui.screens.LearningDataScreen
 import com.orion.assistant.ui.screens.OnboardingScreen
 import com.orion.assistant.ui.screens.PermissionScreen
 import com.orion.assistant.ui.screens.SettingsScreen
@@ -37,7 +38,7 @@ import com.orion.assistant.ui.theme.OrionMotion
 
 /** App 内的页面（不引入 navigation 库，一个状态就够了） */
 enum class OrionScreen {
-    HOME, ONBOARDING, PERMISSIONS, SETTINGS, HISTORY
+    HOME, ONBOARDING, PERMISSIONS, SETTINGS, HISTORY, LEARNING_DATA
 }
 
 /** 从系统设置返回时用来触发界面刷新（MainActivity.onResume 里自增） */
@@ -99,9 +100,15 @@ fun OrionRoot() {
     // 只有首页和引导页不拦截，保留系统默认的「退出」行为。
     val hasParent = screen == OrionScreen.PERMISSIONS ||
         screen == OrionScreen.SETTINGS ||
-        screen == OrionScreen.HISTORY
+        screen == OrionScreen.HISTORY ||
+        screen == OrionScreen.LEARNING_DATA
     BackHandler(enabled = hasParent) {
-        screen = OrionScreen.HOME
+        // 自学习数据是设置页的子页面，返回时回到设置；其余子页面回首页
+        screen = if (screen == OrionScreen.LEARNING_DATA) {
+            OrionScreen.SETTINGS
+        } else {
+            OrionScreen.HOME
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -161,12 +168,18 @@ fun OrionRoot() {
 
                 OrionScreen.SETTINGS -> SettingsScreen(
                     backdrop = backdrop,
-                    onBack = { screen = OrionScreen.HOME }
+                    onBack = { screen = OrionScreen.HOME },
+                    onOpenLearningData = { screen = OrionScreen.LEARNING_DATA }
                 )
 
                 OrionScreen.HISTORY -> HistoryScreen(
                     backdrop = backdrop,
                     onBack = { screen = OrionScreen.HOME }
+                )
+
+                OrionScreen.LEARNING_DATA -> LearningDataScreen(
+                    backdrop = backdrop,
+                    onBack = { screen = OrionScreen.SETTINGS }
                 )
             }
         }
