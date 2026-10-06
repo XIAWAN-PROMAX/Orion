@@ -64,6 +64,9 @@ import com.orion.assistant.ui.theme.OrionColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 设置页：模型与 Key、操作节奏、存储、关于。
@@ -103,6 +106,11 @@ fun SettingsScreen(
 
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
+
+    // 用量信息：本地累计的 token 消耗，「更新」按钮会发一个探针请求刷新
+    var usage by remember { mutableStateOf(app.settings.usage) }
+    var refreshingUsage by remember { mutableStateOf(false) }
+    var usageHint by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -276,6 +284,72 @@ fun SettingsScreen(
                         text = it,
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (it.contains("成功")) OrionColors.Success else OrionColors.Danger
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // 用量信息：本地累计的 token 消耗；点「更新」发一个探针请求刷新
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "用量信息",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OrionColors.TextPrimary
+                    )
+                    Spacer(Modifier.weight(1f))
+                    com.orion.assistant.ui.components.GlassButton(
+                        text = if (refreshingUsage) "更新中…" else "更新",
+                        backdrop = backdrop,
+                        leading = Icons.Filled.Refresh,
+                        enabled = !refreshingUsage && apiKey.isNotBlank(),
+                        onClick = {
+                            refreshingUsage = true
+                            usageHint = null
+                            scope.launch {
+                                val message = VisionClient(app.settings).refreshUsage()
+                                withContext(Dispatchers.Main) {
+                                    usage = app.settings.usage
+                                    usageHint = message
+                                    refreshingUsage = false
+                                }
+                            }
+                        }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "本机累计消耗 ${usage.totalTokens} tokens（${usage.callCount} 次调用）",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OrionColors.Accent,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = buildString {
+                        append("最近一次 ${usage.lastTotalTokens} tokens")
+                        if (usage.lastUpdatedAt > 0) {
+                            append(" · ")
+                            append(
+                                SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                                    .format(Date(usage.lastUpdatedAt))
+                            )
+                        }
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextSecondary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "仅统计本机发起的调用；如需账户余额，请到服务商控制台查看。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OrionColors.TextTertiary
+                )
+                usageHint?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (it.startsWith("用量已更新")) OrionColors.Success else OrionColors.Danger
                     )
                 }
             }
@@ -538,7 +612,7 @@ fun SettingsScreen(
             GlassCard(backdrop = backdrop, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "xiawan开发\n" +
-                        "orionV2.4.0\n" +
+                        "orionV2.5.0\n" +
                         "本项目基于 GNU General Public License v3.0 发布，不可商用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OrionColors.TextSecondary

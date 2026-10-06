@@ -69,7 +69,36 @@ class VisionClient(private val settings: SettingsRepository) {
             return@withContext PlanOutcome.Failure("调用模型失败：${t.message}")
         }
 
+        recordUsage(raw)
         parseResponse(raw)
+    }
+
+    /**
+     * 设置页「用量信息 · 更新」：发一个极小的探针请求，读回本次的 token 用量并累计，
+     * 用来刷新「用量信息」里的数字。返回一句给人看的结果。
+     */
+    suspend fun refreshUsage(): String = withContext(Dispatchers.IO) {
+        val apiKey = settings.apiKey
+        if (apiKey.isBlank()) return@withContext "请先填写 API Key"
+        val payload = JSONObject()
+            .put("model", settings.model)
+            .put(
+                "messages",
+                JSONArray().put(JSONObject().put("role", "user").put("content", "usage"))
+            )
+            .put("max_tokens", 8)
+            .put("stream", false)
+            .toString()
+        val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
+        try {
+            val raw = postJson(endpoint, apiKey, payload)
+            recordUsage(raw)
+            "用量已更新"
+        } catch (e: IOException) {
+            humanizeHttpError(e.message)
+        } catch (t: Throwable) {
+            "更新失败：${t.message}"
+        }
     }
 
     /** 连一下模型服务，用于设置页的「测试连接」 */
@@ -86,7 +115,8 @@ class VisionClient(private val settings: SettingsRepository) {
             .toString()
         val endpoint = settings.effectiveBaseUrl.trimEnd('/') + "/chat/completions"
         try {
-            postJson(endpoint, apiKey, payload)
+            val raw = postJson(endpoint, apiKey, payload)
+            recordUsage(raw)
             "连接成功，模型可以正常调用"
         } catch (e: IOException) {
             humanizeHttpError(e.message)
@@ -132,6 +162,7 @@ class VisionClient(private val settings: SettingsRepository) {
         } catch (t: Throwable) {
             return@withContext null
         }
+        recordUsage(raw)
         parseExperience(raw)
     }
 
@@ -217,6 +248,16 @@ class VisionClient(private val settings: SettingsRepository) {
     }
 
     // ------------------------------------------------------------------ 解析
+
+    /** 从模型返回里读出 usage 并累计到本地用量统计；没有 usage 字段就静默跳过 */
+    private fun recordUsage(raw: String) {
+        val usage = runCatching { JSONObject(raw).optJSONObject("usage") }.getOrNull() ?: return
+        settings.recordUsage(
+            prompt = usage.optInt("prompt_tokens", 0),
+            completion = usage.optInt("completion_tokens", 0),
+            total = usage.optInt("total_tokens", 0)
+        )
+    }
 
     private fun parseResponse(raw: String): PlanOutcome {
         val root = runCatching { JSONObject(raw) }.getOrElse {

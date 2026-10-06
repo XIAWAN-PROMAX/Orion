@@ -51,6 +51,20 @@ enum class ModelProvider(
     }
 }
 
+/** 本地累计的用量统计（token 消耗）。仅统计本机发起的调用，不代表服务端账户余额。 */
+data class UsageStats(
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val totalTokens: Int,
+    val callCount: Int,
+    val lastTotalTokens: Int,
+    val lastUpdatedAt: Long
+) {
+    companion object {
+        val EMPTY = UsageStats(0, 0, 0, 0, 0, 0L)
+    }
+}
+
 /** 操作速度偏好：控制每一步之间的随机间隔，避免机械节奏。 */
 enum class OperationSpeed(
     val label: String,
@@ -190,6 +204,33 @@ class SettingsRepository(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_PROMPT, "").orEmpty()
         set(value) = write { putString(KEY_CUSTOM_PROMPT, value) }
 
+    /** 本地累计的用量统计：每次成功调用模型后由 VisionClient 记一笔 */
+    val usage: UsageStats
+        get() = UsageStats(
+            promptTokens = prefs.getInt(KEY_USAGE_PROMPT, 0),
+            completionTokens = prefs.getInt(KEY_USAGE_COMPLETION, 0),
+            totalTokens = prefs.getInt(KEY_USAGE_TOTAL, 0),
+            callCount = prefs.getInt(KEY_USAGE_CALLS, 0),
+            lastTotalTokens = prefs.getInt(KEY_USAGE_LAST, 0),
+            lastUpdatedAt = prefs.getLong(KEY_USAGE_UPDATED, 0L)
+        )
+
+    /** 记录一次调用的 token 消耗（模型返回 usage 字段时调用） */
+    fun recordUsage(prompt: Int, completion: Int, total: Int) {
+        val p = prompt.coerceAtLeast(0)
+        val c = completion.coerceAtLeast(0)
+        val t = (if (total > 0) total else p + c).coerceAtLeast(0)
+        if (p == 0 && c == 0 && t == 0) return
+        write {
+            putInt(KEY_USAGE_PROMPT, prefs.getInt(KEY_USAGE_PROMPT, 0) + p)
+            putInt(KEY_USAGE_COMPLETION, prefs.getInt(KEY_USAGE_COMPLETION, 0) + c)
+            putInt(KEY_USAGE_TOTAL, prefs.getInt(KEY_USAGE_TOTAL, 0) + t)
+            putInt(KEY_USAGE_CALLS, prefs.getInt(KEY_USAGE_CALLS, 0) + 1)
+            putInt(KEY_USAGE_LAST, t)
+            putLong(KEY_USAGE_UPDATED, System.currentTimeMillis())
+        }
+    }
+
     /** 只要填了 Key 就算「有 Key」（用于权限清单里的打勾） */
     val isReady: Boolean
         get() = apiKey.isNotBlank()
@@ -221,5 +262,11 @@ class SettingsRepository(context: Context) {
         private const val KEY_ONBOARDED = "onboarding_completed"
         private const val KEY_LAST_TASK = "last_instruction"
         private const val KEY_CUSTOM_PROMPT = "custom_prompt"
+        private const val KEY_USAGE_PROMPT = "usage_prompt_tokens"
+        private const val KEY_USAGE_COMPLETION = "usage_completion_tokens"
+        private const val KEY_USAGE_TOTAL = "usage_total_tokens"
+        private const val KEY_USAGE_CALLS = "usage_call_count"
+        private const val KEY_USAGE_LAST = "usage_last_tokens"
+        private const val KEY_USAGE_UPDATED = "usage_updated_at"
     }
 }
