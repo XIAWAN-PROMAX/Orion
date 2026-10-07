@@ -15,6 +15,7 @@
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose\&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-2.5-3D6BFF)](https://github.com/XIAWAN-PROMAX/Orion/releases)
+[![官网](https://img.shields.io/badge/官网-xiawan--promax.github.io%2FOrion-3D6BFF)](https://xiawan-promax.github.io/Orion/)
 
 </div>
 
@@ -153,6 +154,8 @@ Orion 会在**每次任务结束后自动复盘**：这一次哪些做得好、�
 ***
 
 ## 下载安装
+
+> 官网：<https://xiawan-promax.github.io/Orion/>
 
 **方式一 · 直接装 APK**（只想用的同学看这里）
 
